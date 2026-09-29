@@ -3,4 +3,5 @@ dist/
 .env
 .DS_Store
 data/statsbomb-open-data/
+.data/
 *.tsbuildinfo

@@ -1,287 +1,216 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { getDatasetStatus, parseBrief, scout } from "./api";
+import { useEffect, useState, type FormEvent } from "react";
+import { getDatasetStatus, turnRecruitmentCase } from "./api";
+import { buildEvidenceComparison, toggleComparedPlayer } from "./comparison";
+import { SearchableTeamSelect } from "./SearchableTeamSelect";
 import {
-  analysisMatchesRequest,
-  isAnalysisSnapshotStale,
   loadRecruitmentPlans,
-  recordSuccessfulAnalysis,
+  messageFromTurn,
   removeRecruitmentPlan,
   saveRecruitmentPlans,
   upsertRecruitmentPlan,
+  type ConversationMessage,
   type SavedRecruitmentPlan,
 } from "./plans";
-import type {
-  DatasetStatus,
-  InPossessionRole,
-  OutOfPossessionRole,
-  Position,
-  RankedCandidate as Candidate,
-  ScoutInput as ScoutRequest,
-  ScoutResponse,
-} from "../../src/domain/schemas.js";
+import type { DatasetStatus, RecruitmentReport } from "../../src/domain/schemas.js";
 
-const positions: Array<{ value: Position; label: string }> = [
-  { value: "GK", label: "门将" }, { value: "CB", label: "中后卫" }, { value: "LB", label: "左后卫" },
-  { value: "RB", label: "右后卫" }, { value: "LWB", label: "左翼卫" }, { value: "RWB", label: "右翼卫" },
-  { value: "DM", label: "后腰" }, { value: "CM", label: "中场" }, { value: "AM", label: "前腰" },
-  { value: "LW", label: "左边锋" }, { value: "RW", label: "右边锋" }, { value: "ST", label: "中锋" },
+const suggestedBriefs = [
+  "为拜仁寻找凯恩的替代者，重点看能接应、做球和终结的前锋",
+  "我想为巴萨找一个新的后卫，要能参与出球和高位防守",
+  "给阿森纳找一个能推进、也愿意参与压迫的中场",
 ];
-
-const inPossessionRoles: Array<{ value: InPossessionRole; label: string; note: string }> = [
-  { value: "progression", label: "推进持球者", note: "带球与长传作为推进代理指标" },
-  { value: "retention", label: "控球组织者", note: "传球成功率；不代表接球压力下的控球" },
-  { value: "creation", label: "机会创造者", note: "射门助攻与助攻" },
-];
-
-const outOfPossessionRoles: Array<{ value: OutOfPossessionRole; label: string; note: string }> = [
-  { value: "pressing", label: "积极施压者", note: "施压次数；不代表施压成功率" },
-  { value: "defensive_disruption", label: "防守破坏者", note: "抢断与拦截次数；不代表对抗成功率" },
-];
-
-interface BriefForm {
-  targetTeam: string;
-  position: Position | "";
-  maxAge: string;
-  query: string;
-  inPossessionRoles: InPossessionRole[];
-  outOfPossessionRoles: OutOfPossessionRole[];
-  topK: number;
-}
-
-const initialForm: BriefForm = {
-  targetTeam: "",
-  position: "",
-  maxAge: "",
-  query: "",
-  inPossessionRoles: ["progression"],
-  outOfPossessionRoles: ["pressing"],
-  topK: 5,
-};
 
 function App() {
-  const [form, setForm] = useState(initialForm);
+  const [threadId, setThreadId] = useState<string>(() => crypto.randomUUID());
+  const [messages, setMessages] = useState<ConversationMessage[]>([]);
+  const [report, setReport] = useState<RecruitmentReport | null>(null);
+  const [reportAt, setReportAt] = useState<string | null>(null);
+  const [status, setStatus] = useState<"ready" | "needs_input" | "completed">("ready");
+  const [draft, setDraft] = useState("");
+  const [teamContext, setTeamContext] = useState("");
   const [planName, setPlanName] = useState("");
+  const [originalBrief, setOriginalBrief] = useState("");
   const [dataset, setDataset] = useState<DatasetStatus | null>(null);
   const [plans, setPlans] = useState<SavedRecruitmentPlan[]>([]);
   const [activePlanId, setActivePlanId] = useState<string | null>(null);
-  const [result, setResult] = useState<ScoutResponse | null>(null);
-  const [resultAnalyzedAt, setResultAnalyzedAt] = useState<string | null>(null);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [hasConversationState, setHasConversationState] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [parsing, setParsing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [planMessage, setPlanMessage] = useState<string | null>(null);
-  const [parsedBrief, setParsedBrief] = useState(false);
-  const [parserNotice, setParserNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     getDatasetStatus().then(setDataset).catch(() => setDataset(null));
     try {
       setPlans(loadRecruitmentPlans());
     } catch (caught) {
-      setPlanMessage(caught instanceof Error ? caught.message : "本地计划无法读取。");
+      setNotice(caught instanceof Error ? caught.message : "本地计划无法读取。");
     }
   }, []);
 
-  const datasetLabel = dataset?.mode === "statsbomb" ? "StatsBomb Open Data" : "虚构演示数据";
+  const datasetLabel = dataset?.mode === "statsbomb" ? "StatsBomb Open Data" : dataset?.source ?? "数据源状态未知";
+  const waitingForAnswer = status === "needs_input";
 
-  function toggleInPossessionRole(role: InPossessionRole) {
-    setForm((current) => ({
-      ...current,
-      inPossessionRoles: current.inPossessionRoles.includes(role)
-        ? current.inPossessionRoles.filter((item) => item !== role)
-        : [...current.inPossessionRoles, role],
-    }));
-  }
-
-  function toggleOutOfPossessionRole(role: OutOfPossessionRole) {
-    setForm((current) => ({
-      ...current,
-      outOfPossessionRoles: current.outOfPossessionRoles.includes(role)
-        ? current.outOfPossessionRoles.filter((item) => item !== role)
-        : [...current.outOfPossessionRoles, role],
-    }));
-  }
-
-  async function handleParseBrief() {
-    const brief = form.query.trim();
-    if (brief.length < 5) {
-      setError("请先用一句话描述招募需求。");
-      return;
-    }
-    setParsing(true);
-    setError(null);
-    setParserNotice(null);
-    try {
-      const response = await parseBrief(brief);
-      const { draft } = response;
-      const hasParsedRoles = draft.inPossessionRoles.length + draft.outOfPossessionRoles.length > 0;
-      setForm((current) => ({
-        ...current,
-        // Missing required values are cleared instead of inheriting a previous plan's values.
-        targetTeam: draft.targetTeam ?? "",
-        position: draft.position ?? "",
-        maxAge: draft.maxAge === null ? "" : String(draft.maxAge),
-        inPossessionRoles: hasParsedRoles ? draft.inPossessionRoles : ["progression"],
-        outOfPossessionRoles: hasParsedRoles ? draft.outOfPossessionRoles : ["pressing"],
-      }));
-      setParsedBrief(true);
-      const missingLabels = response.missingFields.map((field) => field === "targetTeam" ? "目标球队" : "球员位置");
-      const defaultsNotice = draft.inPossessionRoles.length + draft.outOfPossessionRoles.length === 0
-        ? "描述里没有识别到职责偏好，已显示默认的推进持球与积极施压选项。"
-        : "";
-      setParserNotice([
-        missingLabels.length ? `已生成草稿。还需要补充：${missingLabels.join("、")}。` : "已生成需求草稿。",
-        defaultsNotice,
-        "请检查并修订结构化字段，再确认运行分析。",
-      ].filter(Boolean).join(" "));
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "自然语言解析暂不可用，请手动填写下方字段。");
-    } finally {
-      setParsing(false);
-    }
-  }
-
-  function toScoutRequest(): ScoutRequest | null {
-    if (!form.targetTeam.trim()) {
-      setError("请填写目标球队。");
-      return null;
-    }
-    if (!form.position) {
-      setError("请补充球员位置。");
-      return null;
-    }
-    if (form.inPossessionRoles.length + form.outOfPossessionRoles.length === 0) {
-      setError("至少选择一项有球或无球职责。");
-      return null;
-    }
-    return buildScoutRequest(form);
-  }
-
-  function persistPlans(nextPlans: SavedRecruitmentPlan[]) {
+  function persistPlans(nextPlans: SavedRecruitmentPlan[], successMessage?: string) {
     try {
       saveRecruitmentPlans(nextPlans);
       setPlans(nextPlans);
-      setPlanMessage("招募计划已保存到此浏览器。");
       setError(null);
+      if (successMessage) setNotice(successMessage);
       return true;
     } catch (caught) {
-      setPlanMessage(caught instanceof Error ? caught.message : "无法保存本地计划。");
+      setError(caught instanceof Error ? caught.message : "无法保存本地计划。");
       return false;
     }
   }
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const request = toScoutRequest();
-    if (!request) return;
+  function persistCurrentPlan(input: {
+    nextMessages: ConversationMessage[];
+    nextReport: RecruitmentReport | null;
+    nextReportAt: string | null;
+    nextHasConversationState: boolean;
+    brief: string;
+    id: string;
+  }): boolean {
+    const now = new Date().toISOString();
+    const name = planName.trim() || input.brief.trim().slice(0, 42) || "新的招募计划";
+    const saved = upsertRecruitmentPlan(plans, {
+      id: input.id,
+      name,
+      threadId,
+      originalBrief: input.brief,
+      messages: input.nextMessages,
+      currentReport: input.nextReport,
+      currentReportedAt: input.nextReportAt,
+      hasConversationState: input.nextHasConversationState,
+      now,
+    });
+    if (persistPlans(saved.plans)) {
+      setActivePlanId(saved.plan.id);
+      setPlanName(saved.plan.name);
+      setHasConversationState(input.nextHasConversationState);
+      return true;
+    }
+    return false;
+  }
+
+  async function sendMessage(messageText = draft) {
+    const text = messageText.trim();
+    if (!text || loading) return;
     setLoading(true);
     setError(null);
-    setPlanMessage(null);
+    setNotice(null);
+
+    const userMessage: ConversationMessage = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content: text,
+      ...(teamContext.trim() ? { teamContext: teamContext.trim() } : {}),
+    };
+    const nextMessages = [...messages, userMessage];
+    const brief = originalBrief || text;
+    const contextParts = [text];
+    if (teamContext.trim()) contextParts.push(`用户补充的目标球队：${teamContext.trim()}`);
+    if (!hasConversationState && messages.length > 0) {
+      contextParts.unshift(`案件原始需求：${originalBrief || messages.find((item) => item.role === "user")?.content || "未记录"}`);
+      if (report) contextParts.push(`此前报告摘要：${report.needSummary}`);
+    }
+
     try {
-      const response = await scout(request);
-      const analyzedAt = new Date().toISOString();
-      setResult(response);
-      setResultAnalyzedAt(analyzedAt);
-      setSelectedIds([]);
-      setParsedBrief(false);
+      const response = await turnRecruitmentCase(threadId, contextParts.join("\n\n"), hasConversationState);
+      const assistantMessage = messageFromTurn(response);
+      const updatedMessages = [...nextMessages, assistantMessage];
+      const now = new Date().toISOString();
+      const updatedReport = response.report ?? report;
+      const updatedReportAt = response.report ? now : reportAt;
+
+      setMessages(updatedMessages);
+      setReport(updatedReport);
+      setReportAt(updatedReportAt);
+      setStatus(response.status);
+      setDraft("");
+      setTeamContext("");
+      setOriginalBrief(brief);
+      setHasConversationState(true);
+
       if (activePlanId) {
-        const next = recordSuccessfulAnalysis(plans, {
+        persistCurrentPlan({
+          nextMessages: updatedMessages,
+          nextReport: updatedReport,
+          nextReportAt: updatedReportAt,
+          nextHasConversationState: true,
+          brief,
           id: activePlanId,
-          name: planName,
-          request,
-          originalBrief: form.query,
-          analysis: response,
-          analyzedAt,
         });
-        persistPlans(next);
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "分析失败，请稍后再试。");
+      setError(caught instanceof Error ? caught.message : "对话暂时无法继续，请稍后再试。你输入的内容还在。");
     } finally {
       setLoading(false);
     }
   }
 
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void sendMessage();
+  }
+
   function saveCurrentPlan() {
-    const request = toScoutRequest();
-    if (!request) return;
-    const now = new Date().toISOString();
-    const name = planName.trim() || `${request.targetTeam} · ${positions.find((item) => item.value === request.position)?.label ?? request.position}`;
-    const saved = upsertRecruitmentPlan(plans, {
-      id: activePlanId ?? crypto.randomUUID(),
-      name,
-      input: request,
-      originalBrief: form.query,
-      currentAnalysis: result,
-      currentAnalyzedAt: resultAnalyzedAt,
-      now,
-    });
-    if (persistPlans(saved.plans)) {
-      setActivePlanId(saved.plan.id);
-      if (saved.isNew && !saved.analysisMatches) {
-        setResult(null);
-        setResultAnalyzedAt(null);
-        setSelectedIds([]);
-      }
-      setPlanMessage(saved.analysisMatches ? "招募计划和最近分析快照已保存。" : saved.plan.lastAnalysis ? "招募条件已保存；最近分析快照保留，重新分析后会更新。" : "招募计划已保存；生成候选名单后可保存分析快照。");
+    if (!messages.length) {
+      setError("先描述一条招募需求，再保存计划。");
+      return;
     }
+    const saved = persistCurrentPlan({
+      nextMessages: messages,
+      nextReport: report,
+      nextReportAt: reportAt,
+      nextHasConversationState: hasConversationState,
+      brief: originalBrief || messages.find((message) => message.role === "user")?.content || "",
+      id: activePlanId ?? crypto.randomUUID(),
+    });
+    if (saved) setNotice(report ? "招募计划和最近报告已保存到此浏览器。" : "招募计划与对话已保存；完成分析后会更新最近报告。");
   }
 
   function openPlan(plan: SavedRecruitmentPlan) {
-    setActivePlanId(plan.id);
+    setThreadId(plan.threadId);
+    setMessages(plan.messages);
+    setReport(plan.lastReport);
+    setReportAt(plan.lastReportedAt);
+    setStatus(plan.messages.at(-1)?.questionReason ? "needs_input" : plan.lastReport ? "completed" : "ready");
+    setDraft("");
+    setTeamContext("");
     setPlanName(plan.name);
-    setForm({
-      targetTeam: plan.input.targetTeam,
-      position: plan.input.position,
-      maxAge: plan.input.maxAge === undefined ? "" : String(plan.input.maxAge),
-      query: plan.originalBrief,
-      inPossessionRoles: plan.input.inPossessionRoles,
-      outOfPossessionRoles: plan.input.outOfPossessionRoles,
-      topK: plan.input.topK,
-    });
-    setResult(plan.lastAnalysis);
-    setResultAnalyzedAt(plan.lastAnalyzedAt);
-    setSelectedIds([]);
-    setParsedBrief(false);
+    setOriginalBrief(plan.originalBrief);
+    setActivePlanId(plan.id);
+    setHasConversationState(plan.hasConversationState);
     setError(null);
-    const stale = isAnalysisSnapshotStale(plan);
-    setPlanMessage(stale
-      ? `计划条件已更新；当前保留的是 ${plan.lastAnalyzedAt ? formatDate(plan.lastAnalyzedAt) : "未知时间"} 的上一份快照。`
-      : plan.lastAnalyzedAt ? `显示最近一次分析：${formatDate(plan.lastAnalyzedAt)}。` : "该计划还没有分析快照。");
+    setNotice(plan.lastReportedAt
+      ? `已打开计划，显示 ${formatDate(plan.lastReportedAt)} 保存的最近报告。`
+      : "已打开保存的招募对话。Agent 会接着处理你的补充。 ");
   }
 
-  function startNewPlan() {
-    setActivePlanId(null);
+  function startNewCase() {
+    setThreadId(crypto.randomUUID());
+    setMessages([]);
+    setReport(null);
+    setReportAt(null);
+    setStatus("ready");
+    setDraft("");
+    setTeamContext("");
     setPlanName("");
-    setForm(initialForm);
-    setResult(null);
-    setResultAnalyzedAt(null);
-    setSelectedIds([]);
-    setParsedBrief(false);
+    setOriginalBrief("");
+    setActivePlanId(null);
+    setHasConversationState(false);
     setError(null);
-    setPlanMessage("已开始新的招募计划。");
+    setNotice("已开始新的招募案件。");
   }
 
-  function deletePlan(planId: string) {
-    const plan = plans.find((item) => item.id === planId);
+  function deletePlan(id: string) {
+    const plan = plans.find((item) => item.id === id);
     if (!plan || !window.confirm(`确定删除“${plan.name}”吗？`)) return;
-    const next = removeRecruitmentPlan(plans, planId);
-    if (persistPlans(next) && activePlanId === planId) startNewPlan();
+    const next = removeRecruitmentPlan(plans, id);
+    if (persistPlans(next, "已删除本地计划。") && activePlanId === id) startNewCase();
   }
 
-  function toggleCandidate(candidate: Candidate) {
-    setSelectedIds((current) => {
-      if (current.includes(candidate.player.playerId)) return current.filter((id) => id !== candidate.player.playerId);
-      if (current.length >= 3) return current;
-      return [...current, candidate.player.playerId];
-    });
-  }
-
-  const selectedCandidates = useMemo(() => result?.candidates.filter((candidate) => selectedIds.includes(candidate.player.playerId)) ?? [], [result, selectedIds]);
-  const missingRequiredFields = [!form.targetTeam.trim() ? "目标球队" : null, !form.position ? "球员位置" : null].filter(Boolean);
-  const currentRequest = buildScoutRequest(form);
-  const snapshotIsStale = Boolean(result && (!currentRequest || !analysisMatchesRequest(currentRequest, result)));
+  const userCount = messages.filter((message) => message.role === "user").length;
 
   return (
     <div className="app-shell">
@@ -291,88 +220,80 @@ function App() {
           <span>TactiScout</span>
         </a>
         <div className="topbar-meta">
-          <span className={`source-pill ${dataset?.mode === "statsbomb" ? "source-pill-live" : ""}`}>
-            <span className="status-dot" />{datasetLabel}
-          </span>
-          <span className="topbar-caption">球探研究工作台 <span>·</span> MVP</span>
+          <span className={`source-pill ${dataset?.mode === "statsbomb" ? "source-pill-live" : ""}`}><span className="status-dot" />{datasetLabel}</span>
+          <span className="topbar-caption">对话式球探工作台 <span>·</span> MVP</span>
         </div>
       </header>
 
-      <main id="top" className="main-layout">
+      <main id="top" className="main-layout conversation-layout">
         <section className="intro-row">
           <div>
             <p className="eyebrow">TACTICAL RECRUITMENT, WITH EVIDENCE</p>
-            <h1>为下一个位置，<em>找到合适的人。</em></h1>
-            <p className="intro-copy">把战术需求转成清晰的候选名单。每项职责都展示数据依据与证据边界。</p>
+            <h1>把阵容问题交给球探，<em>一起找到答案。</em></h1>
+            <p className="intro-copy">用一句话描述需求。Agent 会先调查数据，必要时再向你追问，并说明推荐依据和证据边界。</p>
           </div>
-          <div className="intro-stamp"><span>01</span><span>SCOUTING<br />BRIEF</span></div>
+          <div className="intro-stamp"><span>01</span><span>SCOUTING<br />CASE</span></div>
         </section>
 
-        <SavedPlans plans={plans} activePlanId={activePlanId} onOpen={openPlan} onDelete={deletePlan} onNew={startNewPlan} />
+        <SavedPlans plans={plans} activePlanId={activePlanId} onOpen={openPlan} onDelete={deletePlan} onNew={startNewCase} />
 
-        <div className="workspace-grid">
-          <aside className="brief-panel">
-            <div className="panel-heading">
-              <div><span className="section-kicker">01 / BRIEF</span><h2>{activePlanId ? "编辑招募计划" : "建立球员需求"}</h2></div>
-              <span className="panel-icon" aria-hidden="true">↗</span>
+        <div className="conversation-workspace">
+          <section className="conversation-panel" aria-label="球探对话">
+            <div className="conversation-heading">
+              <div className="conversation-heading-title"><span className="section-kicker">01 / CASE</span><input aria-label="招募计划名称" value={planName} onChange={(event) => setPlanName(event.target.value)} placeholder={activePlanId ? "已保存的招募计划" : "计划名称（可选）"} /></div>
+              <div className="conversation-heading-actions">
+                {activePlanId && report && <button type="button" className="text-button" onClick={() => void sendMessage("请基于原始需求重新调查候选人，复核此前结论，并更新报告。")} disabled={loading}>复核报告</button>}
+                <button type="button" className="text-button" onClick={saveCurrentPlan} disabled={!messages.length || loading}>保存计划</button>
+              </div>
             </div>
-            <form onSubmit={handleSubmit}>
-              <label className="field-label" htmlFor="query">用自然语言描述需求 <span className="field-hint">可选</span></label>
-              <textarea id="query" className="text-input query-input" rows={3} value={form.query} onChange={(event) => setForm({ ...form, query: event.target.value })} placeholder="例如：帮巴塞罗那找 23 岁以下、能推进和创造机会的中场" />
-              <button className="secondary-button parse-button" type="button" onClick={handleParseBrief} disabled={parsing || loading || form.query.trim().length < 5}>
-                {parsing ? "正在解析…" : "解析为结构化需求"}<span aria-hidden="true">↗</span>
-              </button>
-              {parserNotice && <p className="parser-notice" role="status">{parserNotice}</p>}
 
-              <div className="field-divider"><span>{parsedBrief ? "检查并确认解析结果" : "结构化需求"}</span></div>
-              <label className="field-label" htmlFor="target-team">目标球队</label>
-              <input id="target-team" className="text-input" value={form.targetTeam} onChange={(event) => setForm({ ...form, targetTeam: event.target.value })} placeholder="例如 Barcelona" required />
-
-              <div className="form-row">
-                <div className="field-group">
-                  <label className="field-label" htmlFor="position">位置</label>
-                  <select id="position" className="text-input select-input" value={form.position} onChange={(event) => setForm({ ...form, position: event.target.value as Position | "" })} required>
-                    <option value="">选择位置</option>
-                    {positions.map((position) => <option key={position.value} value={position.value}>{position.label} · {position.value}</option>)}
-                  </select>
+            <div className="conversation-thread" aria-live="polite">
+              {messages.length === 0 ? (
+                <div className="conversation-welcome">
+                  <span className="assistant-avatar">TS</span>
+                  <div className="welcome-card">
+                    <strong>你想解决什么阵容问题？</strong>
+                    <p>说说球队和你期待的球员特点。不必先填位置、年龄或一长串筛选条件。</p>
+                    <div className="suggested-briefs">
+                      {suggestedBriefs.map((brief) => <button type="button" key={brief} onClick={() => setDraft(brief)}>{brief}<span aria-hidden="true">↗</span></button>)}
+                    </div>
+                  </div>
                 </div>
-                <div className="field-group age-field">
-                  <label className="field-label" htmlFor="max-age">年龄上限 <span className="field-hint">可选</span></label>
-                  <div className="number-wrap"><input id="max-age" className="text-input" type="number" min="15" max="45" value={form.maxAge} onChange={(event) => setForm({ ...form, maxAge: event.target.value })} placeholder="不限" /><span>岁</span></div>
+              ) : messages.map((message) => (
+                <article className={`chat-message ${message.role === "user" ? "chat-message-user" : "chat-message-assistant"}`} key={message.id}>
+                  {message.role === "assistant" && <span className="assistant-avatar">TS</span>}
+                  <div className="chat-bubble">
+                    <p>{message.content}</p>
+                    {message.teamContext && <span className="chat-context-chip">目标球队：{message.teamContext}</span>}
+                    {message.questionReason && <div className="question-reason"><strong>为什么需要确认</strong><span>{message.questionReason}</span></div>}
+                  </div>
+                </article>
+              ))}
+              {loading && <div className="chat-message chat-message-assistant"><span className="assistant-avatar">TS</span><div className="chat-bubble typing-indicator"><span /><span /><span /><small>正在研究候选球员和数据依据…</small></div></div>}
+              {waitingForAnswer && !loading && <p className="turn-hint">补充信息后，Agent 会在同一案件中继续调查。</p>}
+            </div>
+
+            <form className="composer" onSubmit={handleSubmit}>
+              <label className="sr-only" htmlFor="message-composer">描述招募需求或回答球探问题</label>
+              <textarea id="message-composer" rows={3} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} placeholder={waitingForAnswer ? "回答这个问题，或补充你希望优先考虑的方向…" : "例如：为拜仁寻找凯恩的替代者，重点看能接应、做球和终结的前锋"} disabled={loading} />
+              <div className="composer-bottom">
+                <div className="composer-context">
+                  <label id="team-context-label" htmlFor="team-context">可选：指定目标球队</label>
+                  <SearchableTeamSelect id="team-context" value={teamContext} onChange={setTeamContext} required={false} />
+                </div>
+                <div className="composer-actions">
+                  <span>Enter 发送 <i>·</i> Shift + Enter 换行</span>
+                  <button className="submit-button" type="submit" disabled={loading || !draft.trim()}><span>{loading ? "研究中…" : waitingForAnswer ? "继续案件" : "开始研究"}</span><span className="button-arrow" aria-hidden="true">→</span></button>
                 </div>
               </div>
-
-              <RoleSelector title="有球职责" roles={inPossessionRoles} selected={form.inPossessionRoles} onToggle={toggleInPossessionRole} />
-              <RoleSelector title="无球职责" roles={outOfPossessionRoles} selected={form.outOfPossessionRoles} onToggle={toggleOutOfPossessionRole} />
-
-              <div className="form-row bottom-row">
-                <div className="field-group">
-                  <label className="field-label" htmlFor="top-k">候选人数</label>
-                  <select id="top-k" className="text-input select-input" value={form.topK} onChange={(event) => setForm({ ...form, topK: Number(event.target.value) })}>
-                    {[3, 5, 8, 10].map((count) => <option key={count} value={count}>{count} 人</option>)}
-                  </select>
-                </div>
-                <p className="age-note">年龄未知的球员会先排除，避免误判门槛。</p>
-              </div>
-
-              <label className="field-label plan-name-label" htmlFor="plan-name">计划名称 <span className="field-hint">保存时使用</span></label>
-              <input id="plan-name" className="text-input" value={planName} onChange={(event) => setPlanName(event.target.value)} placeholder="例如：巴萨中场补强" />
-
-              <button className="submit-button" type="submit" disabled={loading || parsing || missingRequiredFields.length > 0 || form.inPossessionRoles.length + form.outOfPossessionRoles.length === 0}>
-                <span>{loading ? "正在分析球员…" : "确认需求并生成候选名单"}</span><span className="button-arrow" aria-hidden="true">→</span>
-              </button>
               {error && <p className="error-message" role="alert">{error}</p>}
-              {planMessage && <p className="plan-message" role="status">{planMessage}</p>}
-              <div className="form-actions">
-                <button className="text-button" type="button" onClick={saveCurrentPlan} disabled={loading}>{result ? "保存计划与最近结果" : "保存招募计划"}</button>
-                {activePlanId && <span className="active-plan-tag">正在编辑已保存计划</span>}
-              </div>
-              <p className="form-footnote">需求解析 → 用户确认 → 数据筛选 → 职责适配 → 证据审查</p>
+              {notice && <p className="plan-message" role="status">{notice}</p>}
             </form>
-          </aside>
+            <div className="conversation-footnote">已进行 {userCount} 轮用户输入 <span>·</span> 对话与报告可保存到此浏览器</div>
+          </section>
 
-          <section className="results-panel" aria-live="polite">
-            {loading ? <LoadingState /> : result ? <ScoutResults response={result} snapshotIsStale={snapshotIsStale} selectedIds={selectedIds} selectedCandidates={selectedCandidates} onToggleCandidate={toggleCandidate} onClearSelection={() => setSelectedIds([])} /> : <EmptyState datasetLabel={datasetLabel} />}
+          <section className="report-panel" aria-live="polite">
+            {report ? <RecruitmentReportView report={report} reportedAt={reportAt} isWaiting={waitingForAnswer} /> : <EmptyReport datasetLabel={datasetLabel} />}
           </section>
         </div>
       </main>
@@ -385,210 +306,135 @@ function SavedPlans({ plans, activePlanId, onOpen, onDelete, onNew }: {
   plans: SavedRecruitmentPlan[];
   activePlanId: string | null;
   onOpen: (plan: SavedRecruitmentPlan) => void;
-  onDelete: (planId: string) => void;
+  onDelete: (id: string) => void;
   onNew: () => void;
 }) {
   return (
     <section className="saved-plans" aria-label="保存的招募计划">
       <div className="saved-plans-heading">
         <div><span className="section-kicker">LOCAL WORKSPACE</span><h2>招募计划 <small>{plans.length}</small></h2></div>
-        <button type="button" className="secondary-button new-plan-button" onClick={onNew}>＋ 新建计划</button>
+        <button type="button" className="secondary-button new-plan-button" onClick={onNew}>＋ 新建案件</button>
       </div>
-      {plans.length ? (
-        <div className="saved-plan-list">
-          {plans.map((plan) => (
-            <article className={`saved-plan-card ${activePlanId === plan.id ? "active" : ""}`} key={plan.id}>
-              <div className="saved-plan-copy"><strong>{plan.name}</strong><span>{plan.lastAnalysis && !analysisMatchesRequest(plan.input, plan.lastAnalysis) ? "计划条件已更改 · 快照待更新" : plan.lastAnalyzedAt ? `最近分析 ${formatDate(plan.lastAnalyzedAt)}` : "尚无分析快照"}</span></div>
-              <div className="saved-plan-actions">
-                <button type="button" className="text-button" onClick={() => onOpen(plan)}>打开</button>
-                <button type="button" className="text-button danger-text" onClick={() => onDelete(plan.id)}>删除</button>
-              </div>
-            </article>
-          ))}
-        </div>
-      ) : <p className="no-saved-plans">分析完成后可将需求与最近结果保存在此浏览器。</p>}
+      {plans.length ? <div className="saved-plan-list">{plans.map((plan) => (
+        <article className={`saved-plan-card ${activePlanId === plan.id ? "active" : ""}`} key={plan.id}>
+          <div className="saved-plan-copy"><strong>{plan.name}</strong><span>{plan.lastReportedAt ? `最近报告 ${formatDate(plan.lastReportedAt)}` : "对话已保存，尚无报告"}</span></div>
+          <div className="saved-plan-actions"><button type="button" className="text-button" onClick={() => onOpen(plan)}>打开</button><button type="button" className="text-button danger-text" onClick={() => onDelete(plan.id)}>删除</button></div>
+        </article>
+      ))}</div> : <p className="no-saved-plans">保存后，计划和最近一份分析报告会留在此浏览器。</p>}
     </section>
   );
 }
 
-function RoleSelector<T extends string>({ title, roles, selected, onToggle }: {
-  title: string;
-  roles: Array<{ value: T; label: string; note: string }>;
-  selected: T[];
-  onToggle: (role: T) => void;
-}) {
+function EmptyReport({ datasetLabel }: { datasetLabel: string }) {
   return (
-    <fieldset className="preference-fieldset">
-      <legend className="field-label">{title} <span className="field-hint">可多选</span></legend>
-      <div className="preference-list">
-        {roles.map((role) => {
-          const active = selected.includes(role.value);
-          return (
-            <button className={`preference-option ${active ? "selected" : ""}`} type="button" key={role.value} aria-pressed={active} onClick={() => onToggle(role.value)}>
-              <span className="preference-check" aria-hidden="true">{active ? "✓" : ""}</span>
-              <span className="preference-copy"><strong>{role.label}</strong><small>{role.note}</small></span>
-              <span className="preference-plus" aria-hidden="true">{active ? "−" : "+"}</span>
-            </button>
-          );
-        })}
-      </div>
-    </fieldset>
-  );
-}
-
-function EmptyState({ datasetLabel }: { datasetLabel: string }) {
-  return (
-    <div className="empty-state">
+    <div className="empty-state report-empty-state">
       <div className="pitch-art" aria-hidden="true"><span className="pitch-circle" /><span className="pitch-dot" /><span className="pitch-line" /></div>
-      <span className="section-kicker">02 / SHORTLIST</span>
-      <h2>先设置球队的<br /><em>球员需求。</em></h2>
-      <p>确认招募需求后，这里会显示候选球员、职责适配、统计依据、样本量和风险提醒。</p>
+      <span className="section-kicker">02 / SCOUTING REPORT</span>
+      <h2>先说说你要解决的<br /><em>阵容问题。</em></h2>
+      <p>球探会围绕可观察的比赛表现建立能力画像，比较候选人的数据、样本和风险，不会用未经验证的总分替代判断。</p>
       <div className="empty-data-note"><span className="status-dot" />当前数据来源：{datasetLabel}</div>
-      <div className="empty-index"><span>STATISTICS</span><i /><span>ROLE FIT</span><i /><span>EVIDENCE</span></div>
+      <div className="empty-index"><span>INVESTIGATE</span><i /><span>COMPARE</span><i /><span>EXPLAIN</span></div>
     </div>
   );
 }
 
-function LoadingState() {
-  return (
-    <div className="loading-state">
-      <div className="loading-orbit"><span /></div>
-      <span className="section-kicker">SCOUTING IN PROGRESS</span>
-      <h2>正在整理候选球员</h2>
-      <p>筛选数据、计算职责适配，再检查证据覆盖。</p>
-    </div>
-  );
-}
+function RecruitmentReportView({ report, reportedAt, isWaiting }: { report: RecruitmentReport; reportedAt: string | null; isWaiting: boolean }) {
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  useEffect(() => setSelectedIds([]), [report]);
+  const selectedRecommendations = report.recommendations.filter((item) => selectedIds.includes(item.player.playerId));
 
-function ScoutResults({ response, snapshotIsStale, selectedIds, selectedCandidates, onToggleCandidate, onClearSelection }: {
-  response: ScoutResponse;
-  snapshotIsStale: boolean;
-  selectedIds: string[];
-  selectedCandidates: Candidate[];
-  onToggleCandidate: (candidate: Candidate) => void;
-  onClearSelection: () => void;
-}) {
-  const positionLabel = positions.find((position) => position.value === response.requirements.position)?.label ?? response.requirements.position;
-  return (
-    <div className="results-content">
-      <div className="results-heading">
-        <div><span className="section-kicker">02 / SHORTLIST</span><h2>{response.targetTeam}<span className="heading-tail">的 {positionLabel}</span></h2></div>
-        <span className="results-count">{String(response.candidates.length).padStart(2, "0")} <small>候选人</small></span>
-      </div>
-      <div className="review-strip">
-        <div className="review-score"><span className="review-score-number">{Math.round(response.review.evidenceCompleteness * 100)}</span><span className="review-score-unit">%</span></div>
-        <div className="review-copy"><strong>证据完整度</strong><span>{response.review.evidenceCoverage === 1 ? "所有候选人均有充足出场样本" : "此值反映样本与数据覆盖，不代表推荐正确概率"}</span></div>
-        <span className="source-mini"><span className="status-dot" />{response.dataSource}</span>
-      </div>
-      {snapshotIsStale && <p className="snapshot-warning">当前招募条件与这份分析结果不同。这里保留的是上一份快照；确认新条件并重新分析后才会更新。</p>}
-      {response.review.findings.length > 0 && <div className="finding-list">{response.review.findings.map((finding, index) => <p key={`${finding}-${index}`}><span>!</span>{finding}</p>)}</div>}
-      {response.candidates.length ? (
-        <>
-          <ComparePanel candidates={selectedCandidates} onClearSelection={onClearSelection} />
-          <p className="compare-hint">选择 2–3 名候选人即可并排比较；当前已选 {selectedIds.length} 名。</p>
-          <div className="candidate-list">
-            {response.candidates.map((candidate, index) => <CandidateCard key={`${candidate.player.playerId}-${index}`} candidate={candidate} rank={index + 1} selected={selectedIds.includes(candidate.player.playerId)} selectionDisabled={selectedIds.length >= 3 && !selectedIds.includes(candidate.player.playerId)} onToggle={() => onToggleCandidate(candidate)} />)}
-          </div>
-        </>
-      ) : (
-        <div className="no-candidates"><span className="no-candidates-mark">∅</span><div><strong>目前没有符合条件的球员</strong><p>试试放宽年龄限制，或切换位置与有球、无球职责。</p></div></div>
-      )}
-      <details className="caveats-panel">
-        <summary><span>职责适配分如何计算</span><span className="details-plus">+</span></summary>
-        <ul>
-          <li>推进持球者：带球/90 × 2 + 长传/90 × 8；最高记为 100。</li>
-          <li>控球组织者：传球成功率。</li>
-          <li>机会创造者：射门助攻/90 × 15 + 助攻/90 × 8；最高记为 100。</li>
-          <li>积极施压者：施压/90 × 4.5；最高记为 100。</li>
-          <li>防守破坏者：(抢断 + 拦截)/90 × 8；最高记为 100。</li>
-          <li>总体适配是所选职责的算术平均。样本分钟单独显示，不会混入适配分。所有权重都是尚未校准的启发式。</li>
-        </ul>
-      </details>
-      <details className="caveats-panel">
-        <summary><span>数据说明与限制</span><span className="details-plus">+</span></summary>
-        <ul>{response.caveats.map((caveat) => <li key={caveat}>{caveat}</li>)}</ul>
-      </details>
-    </div>
-  );
-}
-
-function ComparePanel({ candidates, onClearSelection }: { candidates: Candidate[]; onClearSelection: () => void }) {
-  if (candidates.length < 2) {
-    return <div className="compare-empty"><span>球员比较</span><p>从候选名单中选择 2–3 名球员，比较数据、职责适配和样本风险。</p></div>;
+  function toggleRecommendation(playerId: string) {
+    setSelectedIds((current) => toggleComparedPlayer(current, playerId));
   }
-  const rows: Array<{ label: string; value: (candidate: Candidate) => string }> = [
-    { label: "总体适配", value: (candidate) => `${candidate.tacticalFit} / 100` },
-    { label: "有球适配", value: (candidate) => candidate.inPossessionFit === null ? "未选择" : `${candidate.inPossessionFit} / 100` },
-    { label: "无球适配", value: (candidate) => candidate.outOfPossessionFit === null ? "未选择" : `${candidate.outOfPossessionFit} / 100` },
-    { label: "进球 / 90", value: (candidate) => candidate.per90.goals.toFixed(2) },
-    { label: "助攻 / 90", value: (candidate) => candidate.per90.assists.toFixed(2) },
-    { label: "带球 / 90", value: (candidate) => candidate.per90.carries.toFixed(2) },
-    { label: "施压 / 90", value: (candidate) => candidate.per90.pressures.toFixed(2) },
-    { label: "长传 / 90", value: (candidate) => candidate.per90.longPasses.toFixed(2) },
-    { label: "传球成功率", value: (candidate) => `${candidate.per90.passCompletionPct.toFixed(1)}%` },
-    { label: "抢断与拦截 / 90", value: (candidate) => candidate.per90.tacklesInterceptions.toFixed(2) },
-    { label: "出场样本", value: (candidate) => `${candidate.player.minutes.toLocaleString()} 分钟` },
-    { label: "风险", value: (candidate) => candidate.risks.join("；") || "无额外提示" },
-  ];
+
   return (
-    <section className="compare-panel" aria-label="球员比较">
-      <div className="compare-heading"><div><span className="section-kicker">SIDE BY SIDE</span><h3>候选球员比较</h3></div><button type="button" className="text-button" onClick={onClearSelection}>清除选择</button></div>
-      <div className="compare-table-wrap"><table className="compare-table"><thead><tr><th>比较维度</th>{candidates.map((candidate) => <th key={candidate.player.playerId}>{candidate.player.name}</th>)}</tr></thead><tbody>{rows.map((row) => <tr key={row.label}><th scope="row">{row.label}</th>{candidates.map((candidate) => <td key={candidate.player.playerId}>{row.value(candidate)}</td>)}</tr>)}</tbody></table></div>
+    <div className="report-content">
+      <div className="report-title-row">
+        <div><span className="section-kicker">02 / SCOUTING REPORT</span><h2>{report.targetTeam || "球员招募"}<span className="heading-tail">候选评估</span></h2></div>
+        <span className={`report-status ${isWaiting ? "report-status-pending" : ""}`}>{isWaiting ? "补充信息中" : "已完成一轮评估"}</span>
+      </div>
+      {isWaiting && <p className="snapshot-warning">正在等待补充信息。下方保留最近一次完整报告，后续调查完成后会更新。</p>}
+      <section className="need-summary"><span className="report-section-label">需求理解</span><p>{report.needSummary}</p></section>
+      {report.capabilityProfile.length > 0 && <section className="capability-profile"><span className="report-section-label">目标能力画像 · Agent 根据需求推导，可继续修正</span><ul>{report.capabilityProfile.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul></section>}
+      {report.searchScopes.length > 0 && <section className="search-scope"><span className="report-section-label">候选检索范围</span><p>以下是 Agent 实际使用的条件；可继续在对话中补充或纠正。</p><ul>{report.searchScopes.map((scope, index) => <li key={`${scope.source}-${index}`}><strong>{scope.source === "user_confirmed" ? "用户确认" : "Agent 根据对话解释"}</strong>{" · "}{[
+        scope.position ? `位置 ${scope.position}` : null,
+        scope.maxAge !== null ? `${scope.maxAge} 岁及以下` : null,
+        scope.minimumMinutes > 0 ? `至少 ${scope.minimumMinutes} 分钟` : null,
+        scope.competition ? `赛事 ${scope.competition}` : null,
+        scope.season ? `赛季 ${scope.season}` : null,
+      ].filter(Boolean).join(" · ") || "未设位置、年龄或赛事赛季限制"}</li>)}</ul></section>}
+      <section className="evidence-coverage"><span className="report-section-label">证据覆盖</span><p>已评估 {report.evidenceCoverage.evaluatedCandidateCount} 名候选 · 指标值 {report.evidenceCoverage.availableMetricValues} / {report.evidenceCoverage.expectedMetricValues} 项 · 小样本 {report.evidenceCoverage.lowSampleCandidates} 人 · 同组比较受限 {report.evidenceCoverage.limitedPeerGroupCandidates} 人</p><small>说明当前数据覆盖和样本情况，不代表推荐正确率。</small></section>
+      <section className="knowledge-coverage"><span className="report-section-label">资料检索</span><p>角色/方法片段 {report.knowledgeCoverage.methodologyChunksRetrieved} 条{report.knowledgeCoverage.methodologySearchFailed ? "（检索失败）" : ""} · 球员报告 {report.knowledgeCoverage.playerReportChunksRetrieved} 条{report.knowledgeCoverage.playerReportSearchFailed ? "（检索失败）" : report.knowledgeCoverage.playerReportSearchPerformed ? "（已在表现评估后检索）" : "（未检索）"}</p><small>球员报告只补充定性观察，不直接计入能力评分；关联比赛指标也不代表整条观察已证实。</small></section>
+      <div className="recommendation-heading"><div><span className="report-section-label">候选推荐</span><p>名单顺序是建议的后续考察优先级，不是客观能力排名；每项依据都来自可观察数据。</p></div><span className="results-count">{String(report.recommendations.length).padStart(2, "0")} <small>球员</small></span></div>
+      {report.recommendations.length ? <>
+        <p className="compare-hint">选择 2–3 名球员，并排查看有数据支持的能力维度；缺失项会明确标出。</p>
+        <CompareRecommendations recommendations={selectedRecommendations} onClear={() => setSelectedIds([])} />
+        <div className="recommendation-list">{report.recommendations.map((recommendation, index) => <RecommendationCard key={recommendation.player.playerId} recommendation={recommendation} rank={index + 1} selected={selectedIds.includes(recommendation.player.playerId)} selectionDisabled={selectedIds.length >= 3 && !selectedIds.includes(recommendation.player.playerId)} onToggle={() => toggleRecommendation(recommendation.player.playerId)} />)}</div>
+      </> : <div className="no-candidates"><span className="no-candidates-mark">∅</span><div><strong>当前证据不足以推荐具体球员</strong><p>Agent 的结论和仍缺少的数据列在下方。你也可以继续补充需求。</p></div></div>}
+      {report.limitations.length > 0 && <details className="caveats-panel" open><summary><span>数据范围与风险</span><span className="details-plus">+</span></summary><ul>{report.limitations.map((limitation, index) => <li key={`${limitation}-${index}`}>{limitation}</li>)}</ul></details>}
+      <div className="report-source"><span><i className="status-dot" />{report.dataSource}</span>{reportedAt && <span>报告时间 {formatDate(reportedAt)}</span>}</div>
+    </div>
+  );
+}
+
+function CompareRecommendations({ recommendations, onClear }: { recommendations: RecruitmentReport["recommendations"]; onClear: () => void }) {
+  if (recommendations.length < 2) {
+    return <div className="compare-empty"><span>球员比较</span><p>从推荐名单中选中至少两名候选人；最多可比较三人。</p></div>;
+  }
+  const metricRows = buildEvidenceComparison(recommendations);
+  return (
+    <section className="compare-panel" aria-label="推荐球员比较">
+      <div className="compare-heading"><div><span className="section-kicker">SIDE BY SIDE</span><h3>能力证据比较</h3></div><button type="button" className="text-button" onClick={onClear}>清除选择</button></div>
+      <div className="compare-table-wrap"><table className="compare-table"><thead><tr><th>比较维度</th>{recommendations.map((item) => <th key={item.player.playerId}>{item.player.name}</th>)}</tr></thead><tbody>
+        <tr><th scope="row">出场样本</th>{recommendations.map((item) => <td key={item.player.playerId}>{item.player.minutes.toLocaleString()} 分钟</td>)}</tr>
+        <tr><th scope="row">赛事 / 赛季</th>{recommendations.map((item) => <td key={item.player.playerId}>{item.player.competition} · {item.player.season}</td>)}</tr>
+        <tr><th scope="row">数据来源</th>{recommendations.map((item) => <td key={item.player.playerId}>{item.player.source}</td>)}</tr>
+        <tr><th scope="row">样本与数据风险</th>{recommendations.map((item) => <td key={item.player.playerId}>{item.tradeoffs.join("；") || "暂无额外风险提示"}</td>)}</tr>
+        {metricRows.map((metric) => <tr key={metric.key}><th scope="row">{metric.label}</th>{recommendations.map((item, index) => {
+          const evidence = metric.values[index];
+          const comparison = evidence?.peerPercentile === null
+            ? `同组 ${evidence.peerGroupSize} 人，未显示百分位`
+            : evidence
+              ? `同组第 ${evidence.peerPercentile} 百分位 · ${evidence.peerGroupSize} 人`
+              : "无数据";
+          return <td key={item.player.playerId}>{evidence ? <>{formatMetric(evidence.value)} {evidence.unit}<small className="comparison-cell-detail">{comparison}</small></> : "无数据"}</td>;
+        })}</tr>)}
+      </tbody></table></div>
     </section>
   );
 }
 
-function CandidateCard({ candidate, rank, selected, selectionDisabled, onToggle }: { candidate: Candidate; rank: number; selected: boolean; selectionDisabled: boolean; onToggle: () => void }) {
-  const { player, per90 } = candidate;
-  const stats = [
-    { label: "带球", value: per90.carries.toFixed(1) },
-    { label: "施压", value: per90.pressures.toFixed(1) },
-    { label: "长传", value: per90.longPasses.toFixed(1) },
-    { label: "传球成功率", value: `${per90.passCompletionPct.toFixed(0)}%` },
-  ];
+function RecommendationCard({ recommendation, rank, selected, selectionDisabled, onToggle }: {
+  recommendation: RecruitmentReport["recommendations"][number];
+  rank: number;
+  selected: boolean;
+  selectionDisabled: boolean;
+  onToggle: () => void;
+}) {
+  const { player } = recommendation;
   return (
-    <article className="candidate-card">
-      <div className="candidate-topline">
-        <span className="candidate-rank">{String(rank).padStart(2, "0")}</span>
-        <div className="candidate-title"><h3>{player.name}</h3><span>{player.team} <i>·</i> {player.competition} {player.season}</span></div>
-        <div className="fit-score"><strong>{candidate.score}</strong><span>启发式排序</span></div>
-      </div>
-      <label className="compare-select"><input type="checkbox" checked={selected} disabled={selectionDisabled} onChange={onToggle} /><span>加入比较</span></label>
+    <article className="recommendation-card">
+      <div className="recommendation-card-heading"><span className="candidate-rank">{String(rank).padStart(2, "0")}</span><div className="candidate-title"><h3>{player.name}</h3><span>{player.team} <i>·</i> {player.competition} {player.season}</span></div></div>
       <div className="candidate-meta"><span>{player.position}</span><span>{player.age === null ? "年龄未知" : `${player.age} 岁`}</span><span>{player.minutes.toLocaleString()} 分钟</span></div>
-      <div className="stat-grid">{stats.map((stat) => <div className="stat-cell" key={stat.label}><strong>{stat.value}</strong><span>{stat.label}<small> / 90</small></span></div>)}</div>
-      <div className="fit-meter"><span>总体适配</span><div><i style={{ width: `${candidate.tacticalFit}%` }} /></div><strong>{candidate.tacticalFit}</strong></div>
-      <div className="phase-fit-row"><span>有球职责：{candidate.inPossessionFit === null ? "未选择" : `${candidate.inPossessionFit} / 100`}</span><span>无球职责：{candidate.outOfPossessionFit === null ? "未选择" : `${candidate.outOfPossessionFit} / 100`}</span></div>
-      <div className="role-assessments">
-        {candidate.roleAssessments.map((assessment) => {
-          const label = (assessment.phase === "in_possession" ? inPossessionRoles : outOfPossessionRoles).find((role) => role.value === assessment.role)?.label ?? assessment.role;
-          return <div className="role-assessment" key={`${assessment.phase}-${assessment.role}`}><strong>{label} <span>{assessment.fit}</span></strong><ul>{assessment.evidence.map((item) => <li key={item}>{item}</li>)}</ul><p>暂无数据：{assessment.unsupportedAttributes.join("、")}</p></div>;
-        })}
-      </div>
+      <label className="compare-select"><input type="checkbox" checked={selected} disabled={selectionDisabled} onChange={onToggle} /><span>加入比较</span></label>
+      <p className="recommendation-rationale">{recommendation.rationale}</p>
       <div className="evidence-columns">
-        <div><span className="evidence-label">推荐依据</span>{candidate.reasons.length ? <ul>{candidate.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul> : <p>目前没有符合所选职责的统计信号。</p>}</div>
-        <div className="risk-column"><span className="evidence-label">风险提示</span><ul>{candidate.risks.map((risk) => <li key={risk}>{risk}</li>)}</ul></div>
+        <div><strong className="evidence-label">重点引用的数据</strong>{recommendation.strengths.length ? <ul>{recommendation.strengths.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul> : <p>未单独标注</p>}</div>
+        <div className="risk-column"><strong className="evidence-label">取舍与待核实</strong>{recommendation.tradeoffs.length ? <ul>{recommendation.tradeoffs.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul> : <p>未单独标注</p>}</div>
       </div>
-      {player.ageSource && <p className="age-provenance">年龄来源：{player.ageSource}{player.ageVerifiedAt ? ` · 核实于 ${player.ageVerifiedAt}` : ""}</p>}
+      {recommendation.evidence.length > 0 && <div className="evidence-table-wrap"><table className="evidence-table"><thead><tr><th>可观测指标</th><th>数值</th><th>对比组</th></tr></thead><tbody>{recommendation.evidence.map((evidence) => <tr key={evidence.key}><th scope="row">{evidence.label}{recommendation.focusEvidenceKeys.includes(evidence.key) && <small className="focus-evidence-tag">本轮重点</small>}</th><td>{formatMetric(evidence.value)} {evidence.unit}</td><td>{evidence.peerPercentile === null ? `样本 ${evidence.peerGroupSize} 人，不显示百分位` : `第 ${evidence.peerPercentile} 百分位 · ${evidence.peerGroupSize} 人`}</td></tr>)}</tbody></table></div>}
+      {recommendation.reportObservations.length > 0 && <section className="report-observations"><strong className="evidence-label">球探报告观察</strong><ul>{recommendation.reportObservations.map((observation, index) => <li key={`${observation.source.sourceId}-${index}`}><p>{observation.summary}</p><small>{observation.verificationStatus === "linked_to_match_data" ? `关联比赛数据：${observation.linkedMetricKeys.join("、")}；需人工核实完整语义。` : "当前比赛数据未核实，作为单一来源的定性观点。"}</small><a href={observation.source.url} target="_blank" rel="noreferrer">{observation.source.title} · {observation.source.author} · {observation.source.license}</a><small>{observation.source.attribution}</small></li>)}</ul></section>}
     </article>
   );
 }
 
-function formatDate(value: string): string {
-  return new Date(value).toLocaleDateString("zh-CN", { year: "numeric", month: "short", day: "numeric" });
+function formatMetric(value: number): string {
+  return Number.isInteger(value) ? value.toLocaleString() : value.toFixed(2);
 }
 
-function buildScoutRequest(form: BriefForm): ScoutRequest | null {
-  if (!form.targetTeam.trim() || !form.position || form.inPossessionRoles.length + form.outOfPossessionRoles.length === 0) return null;
-  return {
-    targetTeam: form.targetTeam.trim(),
-    position: form.position,
-    maxAge: form.maxAge ? Number(form.maxAge) : undefined,
-    query: form.query.trim() || undefined,
-    inPossessionRoles: form.inPossessionRoles,
-    outOfPossessionRoles: form.outOfPossessionRoles,
-    topK: form.topK,
-    includeUnknownAge: false,
-  };
+function formatDate(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "未知时间" : new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(date);
 }
 
 export default App;

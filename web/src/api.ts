@@ -1,8 +1,10 @@
 import {
   DatasetStatusSchema,
+  ConversationTurnResponseSchema,
   ParseBriefResponseSchema,
   ScoutResponseSchema,
   type DatasetStatus,
+  type ConversationTurnResponse,
   type ParseBriefResponse,
   type ScoutInput as ScoutRequest,
   type ScoutResponse,
@@ -52,4 +54,13 @@ export async function parseBrief(brief: string): Promise<ParseBriefResponse> {
     body: JSON.stringify({ brief }),
   });
   return parseContract(ParseBriefResponseSchema, await readResponse(response));
+}
+
+export async function turnRecruitmentCase(caseId: string, message: string, expectsExistingState = false): Promise<ConversationTurnResponse> {
+  const response = await fetch(`/api/v1/recruitment/cases/${encodeURIComponent(caseId)}/turns`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message, expectsExistingState }),
+  });
+  return parseContract(ConversationTurnResponseSchema, await readResponse(response));
 }

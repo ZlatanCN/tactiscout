@@ -1,0 +1,21 @@
+[
+  {
+    "id": "plos-soccer-analysis-2024",
+    "name": "PLOS ONE: 足球表现分析技术研究",
+    "publisher": "PLOS ONE",
+    "rightsUrl": "https://plos.org/terms-of-use/",
+    "license": "CC BY 4.0",
+    "allowedCorpora": ["methodology"],
+    "allowedUrlPrefixes": [
+      "https://journals.plos.org/plosone/article?id=10.1371%2Fjournal.pone.0298346"
+    ],
+    "rights": {
+      "automatedFetch": true,
+      "persistentStorage": true,
+      "aiProcessing": true,
+      "display": true
+    },
+    "rightsVerifiedAt": "2026-09-29",
+    "rightsNote": "文章按 CC BY 发布，PLOS 条款要求遵守署名；期刊说明支持通过 PLOS API、PMC 或 Europe PMC 以程序方式访问。自动获取应优先使用官方 API；官方限额为每分钟 10 次、每次不超过 100 条，并要求注明内容来自 PLOS。当前适配器每进程请求间隔至少 6 秒、最多返回 20 条。仅登记本文方法资料，不登记具名球员报告。"
+  }
+]

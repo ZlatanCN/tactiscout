@@ -23,7 +23,7 @@ export function toPer90(player: PlayerProfile): Per90 {
     goals: round(player.stats.goals * factor),
     assists: round(player.stats.assists * factor),
     passesAttempted: round(player.stats.passesAttempted * factor),
-    passCompletionPct: player.stats.passesAttempted > 0 ? round(player.stats.passesCompleted / player.stats.passesAttempted * 100) : 0,
+    passCompletionPct: player.stats.passesAttempted > 0 ? round(player.stats.passesCompleted / player.stats.passesAttempted * 100) : null,
     longPasses: round(player.stats.longPasses * factor),
     carries: round(player.stats.carries * factor),
     pressures: round(player.stats.pressures * factor),
@@ -51,6 +51,15 @@ function assessInPossessionRole(role: InPossessionRole, stats: Per90): RoleAsses
         unsupportedAttributes: unsupportedByRole[role],
       };
     case "retention":
+      if (stats.passCompletionPct === null) {
+        return {
+          phase: "in_possession",
+          role,
+          fit: null,
+          evidence: [],
+          unsupportedAttributes: [...unsupportedByRole[role], "没有传球样本，无法计算传球成功率"],
+        };
+      }
       return {
         phase: "in_possession",
         role,
@@ -98,8 +107,9 @@ export function assessRoles(requirements: Requirements, stats: Per90): RoleAsses
 }
 
 export function averageFit(assessments: RoleAssessment[]): number | null {
-  if (assessments.length === 0) return null;
-  return Math.round(assessments.reduce((sum, item) => sum + item.fit, 0) / assessments.length);
+  const availableFits = assessments.flatMap((assessment) => assessment.fit === null ? [] : [assessment.fit]);
+  if (availableFits.length === 0) return null;
+  return Math.round(availableFits.reduce((sum, fit) => sum + fit, 0) / availableFits.length);
 }
 
 export function explainFit(

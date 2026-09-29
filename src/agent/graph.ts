@@ -110,6 +110,9 @@ function createWorkflow(repo: PlayerRepository) {
       if (current.allPlayers.length === 0 && repo.mode === "statsbomb") {
         findings.push("没有读取到 StatsBomb 球员记录；请检查数据目录和 JSON 文件是否完整。");
       }
+      if (current.allPlayers.some((player) => player.eventDataComplete === false)) {
+        findings.push("部分阵容记录缺少对应比赛事件文件；这些记录不会参与表现排序。");
+      }
       if (candidates.length === 0) findings.push("没有候选人满足当前筛选条件。");
       if (requirements.maxAge !== undefined && repo.mode === "statsbomb" && current.allPlayers.some((player) => player.position === requirements.position && player.age === null)) {
         findings.push("有位置符合的球员年龄未知并被排除；StatsBomb 开放数据不含出生日期，请配置人口信息 sidecar。");

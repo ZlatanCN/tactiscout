@@ -31,6 +31,7 @@ interface MutablePlayer {
   competition: string;
   season: string;
   minutes: number;
+  eventDataComplete: boolean;
   appearances: Set<string>;
   goals: number;
   assists: number;
@@ -196,6 +197,9 @@ async function loadStatsBombPlayers(): Promise<PlayerProfile[]> {
       const competition = String(match.competition?.competition_name ?? competitionNames.get(compId) ?? "StatsBomb Open Data");
       if (selectedCompetitions.size && !selectedCompetitions.has(compId)) continue;
       if (selectedSeasons.size && !selectedSeasons.has(seasonId)) continue;
+      const eventFile = eventsById.get(matchId);
+      const eventRows = eventFile ? await readJson<unknown>(eventFile).catch(() => undefined) : undefined;
+      const eventDataAvailable = Array.isArray(eventRows) && eventRows.length > 0;
       const lineupFile = lineupsById.get(matchId);
       if (lineupFile) {
         const lineups = asList(await readJson<unknown>(lineupFile).catch(() => []));
@@ -218,17 +222,17 @@ async function loadStatsBombPlayers(): Promise<PlayerProfile[]> {
             }
             const recordId = [id, compId, season, team].join(":");
             const item = getMutable(players, recordId, {
-              playerId: recordId, sourcePlayerId: id, name: playerName, team, position, competition, season, minutes: 0,
+              playerId: recordId, sourcePlayerId: id, name: playerName, team, position, competition, season, minutes: 0, eventDataComplete: true,
             });
+            item.eventDataComplete &&= eventDataAvailable;
             item.minutes += minutes;
             item.appearances.add(matchId);
           }
         }
       }
 
-      const eventFile = eventsById.get(matchId);
-      if (!eventFile) continue;
-      const events = asList(await readJson<unknown>(eventFile).catch(() => []));
+      if (!eventDataAvailable) continue;
+      const events = asList(eventRows);
       for (const rawEvent of events) {
         const event = asRecord(rawEvent);
         const playerId = event.player?.id ?? event.player_id;
@@ -239,7 +243,7 @@ async function loadStatsBombPlayers(): Promise<PlayerProfile[]> {
         const position = mapPosition(event.position?.name) ?? "CM";
         const recordId = [id, compId, season, team].join(":");
         const item = getMutable(players, recordId, {
-          playerId: recordId, sourcePlayerId: id, name: playerName, team, position, competition, season, minutes: 0,
+          playerId: recordId, sourcePlayerId: id, name: playerName, team, position, competition, season, minutes: 0, eventDataComplete: true,
         });
         const type = String(event.type?.name ?? "");
         const pass = asRecord(event.pass);
@@ -273,6 +277,7 @@ async function loadStatsBombPlayers(): Promise<PlayerProfile[]> {
         pressures: item.pressures, tackles: item.tackles, interceptions: item.interceptions,
         shotAssists: item.shotAssists,
       },
+      eventDataComplete: item.eventDataComplete,
       source: "StatsBomb Open Data",
     })];
   });
@@ -310,6 +315,7 @@ export function createRepository(): PlayerRepository {
 
 export function filterEligiblePlayers(players: PlayerProfile[], input: Pick<Requirements, "position" | "maxAge" | "includeUnknownAge">): PlayerProfile[] {
   return players.filter((player) => {
+    if (player.eventDataComplete === false) return false;
     if (input.position && player.position !== input.position) return false;
     if (input.maxAge !== undefined) {
       if (player.age === null && !input.includeUnknownAge) return false;

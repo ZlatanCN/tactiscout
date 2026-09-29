@@ -86,6 +86,7 @@ export const PlayerProfileSchema = z.object({
   season: z.string(),
   minutes: z.number().nonnegative(),
   stats: RawStatsSchema,
+  eventDataComplete: z.boolean().optional(),
   source: z.string(),
 });
 export type PlayerProfile = z.infer<typeof PlayerProfileSchema>;
@@ -94,7 +95,7 @@ export const Per90Schema = z.object({
   goals: z.number(),
   assists: z.number(),
   passesAttempted: z.number(),
-  passCompletionPct: z.number(),
+  passCompletionPct: z.number().nullable(),
   longPasses: z.number(),
   carries: z.number(),
   pressures: z.number(),
@@ -106,7 +107,7 @@ export type Per90 = z.infer<typeof Per90Schema>;
 export const RoleAssessmentSchema = z.object({
   phase: RolePhaseSchema,
   role: z.union([InPossessionRoleSchema, OutOfPossessionRoleSchema]),
-  fit: z.number().min(0).max(100),
+  fit: z.number().min(0).max(100).nullable(),
   evidence: z.array(z.string()),
   unsupportedAttributes: z.array(z.string()),
 });
@@ -149,3 +150,129 @@ export const DatasetStatusSchema = z.object({
   source: z.string(),
 });
 export type DatasetStatus = z.infer<typeof DatasetStatusSchema>;
+
+export const ConversationTurnRequestSchema = z.object({
+  message: z.string().trim().min(1).max(4000),
+  expectsExistingState: z.boolean().default(false),
+});
+export type ConversationTurnRequest = z.infer<typeof ConversationTurnRequestSchema>;
+
+export const CapabilityMetricKeySchema = z.enum([
+  "goals",
+  "assists",
+  "shotAssists",
+  "carries",
+  "longPasses",
+  "passCompletionPct",
+  "pressures",
+  "tacklesInterceptions",
+]);
+export type CapabilityMetricKey = z.infer<typeof CapabilityMetricKeySchema>;
+
+export const CapabilityMetricDefinitions = [
+  { key: "goals", label: "进球", unit: "次/90" },
+  { key: "assists", label: "助攻", unit: "次/90" },
+  { key: "shotAssists", label: "射门助攻", unit: "次/90" },
+  { key: "carries", label: "带球", unit: "次/90" },
+  { key: "longPasses", label: "长传", unit: "次/90" },
+  { key: "passCompletionPct", label: "传球成功率", unit: "%" },
+  { key: "pressures", label: "施压", unit: "次/90" },
+  { key: "tacklesInterceptions", label: "抢断与拦截", unit: "次/90" },
+] as const satisfies readonly { key: CapabilityMetricKey; label: string; unit: string }[];
+
+export const CapabilityEvidenceSchema = z.object({
+  key: CapabilityMetricKeySchema,
+  label: z.string(),
+  value: z.number(),
+  unit: z.string(),
+  peerPercentile: z.number().min(0).max(100).nullable(),
+  peerGroupSize: z.number().int().nonnegative(),
+  minutes: z.number().nonnegative(),
+  competition: z.string(),
+  season: z.string(),
+  source: z.string(),
+});
+export type CapabilityEvidence = z.infer<typeof CapabilityEvidenceSchema>;
+
+export const PlayerRecommendationSchema = z.object({
+  player: PlayerProfileSchema,
+  rationale: z.string(),
+  strengths: z.array(z.string()),
+  tradeoffs: z.array(z.string()),
+  focusEvidenceKeys: z.array(CapabilityMetricKeySchema),
+  evidence: z.array(CapabilityEvidenceSchema),
+  reportObservations: z.array(z.object({
+    summary: z.string(),
+    verificationStatus: z.enum(["unverified", "linked_to_match_data"]),
+    linkedMetricKeys: z.array(CapabilityMetricKeySchema),
+    source: z.object({
+      sourceId: z.string(),
+      sourceName: z.string(),
+      title: z.string(),
+      url: z.string().url(),
+      author: z.string(),
+      publisher: z.string(),
+      publishedAt: z.string().nullable(),
+      license: z.string(),
+      attribution: z.string(),
+    }),
+  })).default([]),
+});
+export type PlayerRecommendation = z.infer<typeof PlayerRecommendationSchema>;
+
+export const EvidenceCoverageSummarySchema = z.object({
+  evaluatedCandidateCount: z.number().int().nonnegative(),
+  availableMetricValues: z.number().int().nonnegative(),
+  expectedMetricValues: z.number().int().nonnegative(),
+  lowSampleCandidates: z.number().int().nonnegative(),
+  limitedPeerGroupCandidates: z.number().int().nonnegative(),
+});
+export type EvidenceCoverageSummary = z.infer<typeof EvidenceCoverageSummarySchema>;
+
+export const KnowledgeCoverageSchema = z.object({
+  methodologyChunksRetrieved: z.number().int().nonnegative(),
+  methodologySearchFailed: z.boolean().default(false),
+  playerReportSearchPerformed: z.boolean(),
+  playerReportSearchFailed: z.boolean().default(false),
+  playerReportChunksRetrieved: z.number().int().nonnegative(),
+});
+export type KnowledgeCoverage = z.infer<typeof KnowledgeCoverageSchema>;
+
+export const RecruitmentSearchScopeSchema = z.object({
+  position: PositionSchema.nullable(),
+  maxAge: z.number().int().min(15).max(45).nullable(),
+  minimumMinutes: z.number().int().nonnegative(),
+  competition: z.string().nullable(),
+  season: z.string().nullable(),
+  source: z.enum(["agent_interpreted", "user_confirmed"]),
+});
+export type RecruitmentSearchScope = z.infer<typeof RecruitmentSearchScopeSchema>;
+
+export const RecruitmentReportSchema = z.object({
+  targetTeam: z.string().nullable(),
+  needSummary: z.string(),
+  capabilityProfile: z.array(z.string()),
+  evidenceCoverage: EvidenceCoverageSummarySchema,
+  knowledgeCoverage: KnowledgeCoverageSchema.default({
+    methodologyChunksRetrieved: 0,
+    methodologySearchFailed: false,
+    playerReportSearchPerformed: false,
+    playerReportSearchFailed: false,
+    playerReportChunksRetrieved: 0,
+  }),
+  searchScopes: z.array(RecruitmentSearchScopeSchema),
+  recommendations: z.array(PlayerRecommendationSchema).max(5),
+  limitations: z.array(z.string()),
+  dataSource: z.string(),
+  datasetMode: z.enum(["demo", "statsbomb"]),
+});
+export type RecruitmentReport = z.infer<typeof RecruitmentReportSchema>;
+
+export const ConversationTurnResponseSchema = z.object({
+  threadId: z.string().min(1),
+  status: z.enum(["needs_input", "completed"]),
+  message: z.string().min(1),
+  question: z.object({ reason: z.string().min(1) }).nullable(),
+  report: RecruitmentReportSchema.nullable(),
+});
+export type ConversationTurnResponse = z.infer<typeof ConversationTurnResponseSchema>;
