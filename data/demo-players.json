@@ -1,0 +1,71 @@
+{
+  "source": "TactiScout fictional demo dataset",
+  "players": [
+    {
+      "playerId": "demo-101",
+      "name": "Alex Rivera",
+      "team": "Northbridge FC",
+      "age": 21,
+      "position": "CM",
+      "competition": "Demo League",
+      "season": "2025/26",
+      "minutes": 2180,
+      "stats": {"goals": 4, "assists": 6, "passesAttempted": 1420, "passesCompleted": 1260, "longPasses": 42, "carries": 118, "pressures": 181, "tackles": 29, "interceptions": 18, "shotAssists": 31}
+    },
+    {
+      "playerId": "demo-102",
+      "name": "Mika Tanaka",
+      "team": "Harbor City",
+      "age": 22,
+      "position": "CM",
+      "competition": "Demo League",
+      "season": "2025/26",
+      "minutes": 1920,
+      "stats": {"goals": 3, "assists": 4, "passesAttempted": 1190, "passesCompleted": 1095, "longPasses": 35, "carries": 151, "pressures": 205, "tackles": 35, "interceptions": 21, "shotAssists": 23}
+    },
+    {
+      "playerId": "demo-103",
+      "name": "Noah Okafor",
+      "team": "Eastvale United",
+      "age": 20,
+      "position": "AM",
+      "competition": "Demo League",
+      "season": "2025/26",
+      "minutes": 1640,
+      "stats": {"goals": 8, "assists": 5, "passesAttempted": 740, "passesCompleted": 650, "longPasses": 14, "carries": 177, "pressures": 106, "tackles": 16, "interceptions": 9, "shotAssists": 38}
+    },
+    {
+      "playerId": "demo-104",
+      "name": "Luis Costa",
+      "team": "Northbridge FC",
+      "age": 24,
+      "position": "CM",
+      "competition": "Demo League",
+      "season": "2025/26",
+      "minutes": 2410,
+      "stats": {"goals": 2, "assists": 7, "passesAttempted": 1650, "passesCompleted": 1490, "longPasses": 57, "carries": 92, "pressures": 198, "tackles": 31, "interceptions": 27, "shotAssists": 35}
+    },
+    {
+      "playerId": "demo-105",
+      "name": "Ethan Brooks",
+      "team": "Lakeside Rovers",
+      "age": 19,
+      "position": "CM",
+      "competition": "Demo League",
+      "season": "2025/26",
+      "minutes": 890,
+      "stats": {"goals": 1, "assists": 2, "passesAttempted": 415, "passesCompleted": 360, "longPasses": 9, "carries": 76, "pressures": 91, "tackles": 18, "interceptions": 8, "shotAssists": 11}
+    },
+    {
+      "playerId": "demo-106",
+      "name": "Samir Haddad",
+      "team": "Westmoor Athletic",
+      "age": 22,
+      "position": "RW",
+      "competition": "Demo League",
+      "season": "2025/26",
+      "minutes": 1770,
+      "stats": {"goals": 10, "assists": 4, "passesAttempted": 630, "passesCompleted": 522, "longPasses": 11, "carries": 221, "pressures": 142, "tackles": 14, "interceptions": 7, "shotAssists": 24}
+    }
+  ]
+}
