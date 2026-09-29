@@ -44,6 +44,13 @@ export interface UpsertRecruitmentPlanResult {
   analysisMatches: boolean;
 }
 
+function sameValues(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false;
+  const sortedLeft = [...left].sort();
+  const sortedRight = [...right].sort();
+  return sortedLeft.every((value, index) => value === sortedRight[index]);
+}
+
 function browserStorage(): BrowserStorage {
   if (typeof window === "undefined" || !window.localStorage) throw new Error("当前环境无法使用浏览器本地存储。");
   return window.localStorage;
@@ -51,7 +58,6 @@ function browserStorage(): BrowserStorage {
 
 export function analysisMatchesRequest(request: ScoutRequest, analysis: ScoutResponse): boolean {
   const requirements = analysis.requirements;
-  const sameValues = <T>(left: T[], right: T[]) => left.length === right.length && left.every((value, index) => value === right[index]);
   return request.targetTeam === requirements.targetTeam
     && request.position === requirements.position
     && request.maxAge === requirements.maxAge
