@@ -1,15 +1,24 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { getDatasetStatus, parseBrief, scout } from "./api";
-import { loadRecruitmentPlans, saveRecruitmentPlans, type SavedRecruitmentPlan } from "./plans";
+import {
+  analysisMatchesRequest,
+  isAnalysisSnapshotStale,
+  loadRecruitmentPlans,
+  recordSuccessfulAnalysis,
+  removeRecruitmentPlan,
+  saveRecruitmentPlans,
+  upsertRecruitmentPlan,
+  type SavedRecruitmentPlan,
+} from "./plans";
 import type {
-  Candidate,
   DatasetStatus,
   InPossessionRole,
   OutOfPossessionRole,
   Position,
-  ScoutRequest,
+  RankedCandidate as Candidate,
+  ScoutInput as ScoutRequest,
   ScoutResponse,
-} from "./types";
+} from "../../src/domain/schemas.js";
 
 const positions: Array<{ value: Position; label: string }> = [
   { value: "GK", label: "门将" }, { value: "CB", label: "中后卫" }, { value: "LB", label: "左后卫" },
@@ -146,16 +155,7 @@ function App() {
       setError("至少选择一项有球或无球职责。");
       return null;
     }
-    return {
-      targetTeam: form.targetTeam.trim(),
-      position: form.position,
-      maxAge: form.maxAge ? Number(form.maxAge) : undefined,
-      query: form.query.trim() || undefined,
-      inPossessionRoles: form.inPossessionRoles,
-      outOfPossessionRoles: form.outOfPossessionRoles,
-      topK: form.topK,
-      includeUnknownAge: false,
-    };
+    return buildScoutRequest(form);
   }
 
   function persistPlans(nextPlans: SavedRecruitmentPlan[]) {
@@ -186,9 +186,14 @@ function App() {
       setSelectedIds([]);
       setParsedBrief(false);
       if (activePlanId) {
-        const next = plans.map((plan) => plan.id === activePlanId
-          ? { ...plan, name: planName.trim() || plan.name, input: request, originalBrief: form.query, lastAnalysis: response, lastAnalyzedAt: analyzedAt, updatedAt: analyzedAt }
-          : plan);
+        const next = recordSuccessfulAnalysis(plans, {
+          id: activePlanId,
+          name: planName,
+          request,
+          originalBrief: form.query,
+          analysis: response,
+          analyzedAt,
+        });
         persistPlans(next);
       }
     } catch (caught) {
@@ -203,29 +208,23 @@ function App() {
     if (!request) return;
     const now = new Date().toISOString();
     const name = planName.trim() || `${request.targetTeam} · ${positions.find((item) => item.value === request.position)?.label ?? request.position}`;
-    const existing = plans.find((plan) => plan.id === activePlanId);
-    const analysisMatches = Boolean(result && requestMatchesResult(request, result));
-    const saved: SavedRecruitmentPlan = {
-      id: existing?.id ?? crypto.randomUUID(),
+    const saved = upsertRecruitmentPlan(plans, {
+      id: activePlanId ?? crypto.randomUUID(),
       name,
       input: request,
       originalBrief: form.query,
-      lastAnalysis: analysisMatches ? result : existing?.lastAnalysis ?? null,
-      lastAnalyzedAt: analysisMatches ? resultAnalyzedAt ?? now : existing?.lastAnalyzedAt ?? null,
-      createdAt: existing?.createdAt ?? now,
-      updatedAt: now,
-    };
-    const next = existing
-      ? plans.map((plan) => plan.id === saved.id ? saved : plan)
-      : [saved, ...plans];
-    if (persistPlans(next)) {
-      setActivePlanId(saved.id);
-      if (!existing && !analysisMatches) {
+      currentAnalysis: result,
+      currentAnalyzedAt: resultAnalyzedAt,
+      now,
+    });
+    if (persistPlans(saved.plans)) {
+      setActivePlanId(saved.plan.id);
+      if (saved.isNew && !saved.analysisMatches) {
         setResult(null);
         setResultAnalyzedAt(null);
         setSelectedIds([]);
       }
-      setPlanMessage(analysisMatches ? "招募计划和最近分析快照已保存。" : saved.lastAnalysis ? "招募条件已保存；最近分析快照保留，重新分析后会更新。" : "招募计划已保存；生成候选名单后可保存分析快照。");
+      setPlanMessage(saved.analysisMatches ? "招募计划和最近分析快照已保存。" : saved.plan.lastAnalysis ? "招募条件已保存；最近分析快照保留，重新分析后会更新。" : "招募计划已保存；生成候选名单后可保存分析快照。");
     }
   }
 
@@ -246,7 +245,7 @@ function App() {
     setSelectedIds([]);
     setParsedBrief(false);
     setError(null);
-    const stale = plan.lastAnalysis && !requestMatchesResult(plan.input, plan.lastAnalysis);
+    const stale = isAnalysisSnapshotStale(plan);
     setPlanMessage(stale
       ? `计划条件已更新；当前保留的是 ${plan.lastAnalyzedAt ? formatDate(plan.lastAnalyzedAt) : "未知时间"} 的上一份快照。`
       : plan.lastAnalyzedAt ? `显示最近一次分析：${formatDate(plan.lastAnalyzedAt)}。` : "该计划还没有分析快照。");
@@ -267,7 +266,7 @@ function App() {
   function deletePlan(planId: string) {
     const plan = plans.find((item) => item.id === planId);
     if (!plan || !window.confirm(`确定删除“${plan.name}”吗？`)) return;
-    const next = plans.filter((item) => item.id !== planId);
+    const next = removeRecruitmentPlan(plans, planId);
     if (persistPlans(next) && activePlanId === planId) startNewPlan();
   }
 
@@ -282,7 +281,7 @@ function App() {
   const selectedCandidates = useMemo(() => result?.candidates.filter((candidate) => selectedIds.includes(candidate.player.playerId)) ?? [], [result, selectedIds]);
   const missingRequiredFields = [!form.targetTeam.trim() ? "目标球队" : null, !form.position ? "球员位置" : null].filter(Boolean);
   const currentRequest = buildScoutRequest(form);
-  const snapshotIsStale = Boolean(result && (!currentRequest || !requestMatchesResult(currentRequest, result)));
+  const snapshotIsStale = Boolean(result && (!currentRequest || !analysisMatchesRequest(currentRequest, result)));
 
   return (
     <div className="app-shell">
@@ -399,7 +398,7 @@ function SavedPlans({ plans, activePlanId, onOpen, onDelete, onNew }: {
         <div className="saved-plan-list">
           {plans.map((plan) => (
             <article className={`saved-plan-card ${activePlanId === plan.id ? "active" : ""}`} key={plan.id}>
-              <div className="saved-plan-copy"><strong>{plan.name}</strong><span>{plan.lastAnalysis && !requestMatchesResult(plan.input, plan.lastAnalysis) ? "计划条件已更改 · 快照待更新" : plan.lastAnalyzedAt ? `最近分析 ${formatDate(plan.lastAnalyzedAt)}` : "尚无分析快照"}</span></div>
+              <div className="saved-plan-copy"><strong>{plan.name}</strong><span>{plan.lastAnalysis && !analysisMatchesRequest(plan.input, plan.lastAnalysis) ? "计划条件已更改 · 快照待更新" : plan.lastAnalyzedAt ? `最近分析 ${formatDate(plan.lastAnalyzedAt)}` : "尚无分析快照"}</span></div>
               <div className="saved-plan-actions">
                 <button type="button" className="text-button" onClick={() => onOpen(plan)}>打开</button>
                 <button type="button" className="text-button danger-text" onClick={() => onDelete(plan.id)}>删除</button>
@@ -576,18 +575,6 @@ function CandidateCard({ candidate, rank, selected, selectionDisabled, onToggle 
 
 function formatDate(value: string): string {
   return new Date(value).toLocaleDateString("zh-CN", { year: "numeric", month: "short", day: "numeric" });
-}
-
-function requestMatchesResult(request: ScoutRequest, response: ScoutResponse): boolean {
-  const requirements = response.requirements;
-  const sameValues = (left: string[], right: string[]) => left.length === right.length && left.every((value, index) => value === right[index]);
-  return request.targetTeam === requirements.targetTeam
-    && request.position === requirements.position
-    && request.maxAge === requirements.maxAge
-    && request.topK === requirements.topK
-    && request.includeUnknownAge === requirements.includeUnknownAge
-    && sameValues(request.inPossessionRoles, requirements.inPossessionRoles)
-    && sameValues(request.outOfPossessionRoles, requirements.outOfPossessionRoles);
 }
 
 function buildScoutRequest(form: BriefForm): ScoutRequest | null {

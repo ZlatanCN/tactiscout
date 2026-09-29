@@ -1,6 +1,6 @@
 import cors from "@fastify/cors";
 import Fastify from "fastify";
-import { ParseBriefRequestSchema, ScoutInputSchema } from "./domain/schemas.js";
+import { DatasetStatusSchema, ParseBriefRequestSchema, ParseBriefResponseSchema, ScoutInputSchema } from "./domain/schemas.js";
 import { runScout } from "./agent/graph.js";
 import { dataRepository } from "./agent/graph.js";
 import { BriefParserUnavailableError, parseRecruitmentBrief } from "./agent/brief-parser.js";
@@ -10,7 +10,7 @@ export function createApp() {
   app.register(cors, { origin: true });
 
   app.get("/health", async () => ({ status: "ok", service: "tactiscout-api" }));
-  app.get("/api/v1/dataset", async () => ({
+  app.get("/api/v1/dataset", async () => DatasetStatusSchema.parse({
     mode: dataRepository.mode,
     source: dataRepository.sourceName,
   }));
@@ -29,7 +29,7 @@ export function createApp() {
         ...(!draft.targetTeam?.trim() ? ["targetTeam" as const] : []),
         ...(!draft.position ? ["position" as const] : []),
       ];
-      return { draft, missingFields };
+      return ParseBriefResponseSchema.parse({ draft, missingFields });
     } catch (error) {
       const message = error instanceof Error ? error.message : "需求解析失败。";
       if (error instanceof BriefParserUnavailableError) return reply.code(503).send({ error: message });

@@ -77,6 +77,16 @@ curl -X POST http://127.0.0.1:8000/api/v1/scout \
   }'
 ```
 
+## 验证
+
+```bash
+pnpm test
+pnpm build
+pnpm build:web
+```
+
+测试通过确定性样例检查浏览器响应契约和招募计划的本地保存行为，不需要模型密钥或 StatsBomb 数据集。
+
 `POST /api/v1/requirements/parse` 接受 `{ "brief": "..." }`，返回待确认的结构化草稿和缺失必填项。`/health` 返回服务状态，`/api/v1/dataset` 返回当前数据模式。
 
 自然语言解析使用服务端环境变量 `OPENAI_API_KEY`、`OPENAI_MODEL` 和可选的 `OPENAI_BASE_URL`。不要把密钥放进网页配置。未配置模型时，自然语言解析入口会说明原因，结构化表单仍可使用。

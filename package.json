@@ -11,6 +11,7 @@
     "dev:web": "pnpm --filter @tactiscout/web dev",
     "build": "tsc -p tsconfig.json",
     "build:web": "pnpm --filter @tactiscout/web build",
+    "test": "node --import tsx --test tests/*.test.ts",
     "start": "node dist/index.js"
   },
   "dependencies": {

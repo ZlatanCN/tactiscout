@@ -11,14 +11,6 @@ export type OutOfPossessionRole = z.infer<typeof OutOfPossessionRoleSchema>;
 
 export const RolePhaseSchema = z.enum(["in_possession", "out_of_possession"]);
 
-const RoleSelectionSchema = z.object({
-  inPossessionRoles: z.array(InPossessionRoleSchema).default([]),
-  outOfPossessionRoles: z.array(OutOfPossessionRoleSchema).default([]),
-}).refine(
-  (value) => value.inPossessionRoles.length + value.outOfPossessionRoles.length > 0,
-  { message: "至少选择一项有球或无球职责。" },
-);
-
 export const ScoutInputSchema = z.object({
   targetTeam: z.string().trim().min(1).describe("Club the recommendation is for"),
   query: z.string().optional().describe("Original natural-language scouting brief"),
@@ -151,3 +143,9 @@ export const ScoutResponseSchema = z.object({
   caveats: z.array(z.string()),
 });
 export type ScoutResponse = z.infer<typeof ScoutResponseSchema>;
+
+export const DatasetStatusSchema = z.object({
+  mode: z.enum(["demo", "statsbomb"]),
+  source: z.string(),
+});
+export type DatasetStatus = z.infer<typeof DatasetStatusSchema>;
