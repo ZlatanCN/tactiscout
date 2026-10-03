@@ -1,6 +1,7 @@
 import { z } from "zod/v4";
 import {
   CapabilityMetricKeySchema,
+  type Position,
   type CapabilityEvidence,
   type CapabilityMetricKey,
   type PlayerProfile,
@@ -68,29 +69,51 @@ export function createConstrainedConclusionSchema(constraints: RecruitmentDecisi
   ]);
 }
 
-function reportMatchesCandidate(document: KnowledgeSearchResult, player: PlayerProfile): boolean {
-  const playerName = normalizeSearchText(player.name);
-  const entityNames = document.entityNames.map(normalizeSearchText);
-  return document.entityIds.includes(player.playerId)
-    || entityNames.some((name) => name === playerName || (name.length >= 4 && (name.includes(playerName) || playerName.includes(name))));
+function reportMatchesCandidate(
+  document: KnowledgeSearchResult,
+  player: PlayerProfile,
+  eligiblePlayers: EvaluatedCandidate[],
+): boolean {
+  const normalizeEntityId = (value: string) => {
+    const separator = value.indexOf(":");
+    return separator < 0 ? value : `${value.slice(0, separator).toLocaleLowerCase()}:${value.slice(separator + 1)}`;
+  };
+  const documentIds = document.entityIds.map(normalizeEntityId);
+  const candidateIds = [
+    player.playerId,
+    ...(player.sourceIdentity ? [`${player.sourceIdentity.provider}:${player.sourceIdentity.playerId}`] : []),
+  ].map(normalizeEntityId);
+  if (documentIds.length) return documentIds.some((id) => candidateIds.includes(id));
+  const documentNames = new Set(document.entityNames.map(normalizeSearchText));
+  const matchingCandidates = new Map<string, EvaluatedCandidate>();
+  for (const candidate of eligiblePlayers) {
+    if (documentNames.has(normalizeSearchText(candidate.player.name))) {
+      matchingCandidates.set(candidate.player.playerId, candidate);
+    }
+  }
+  return matchingCandidates.size === 1 && matchingCandidates.has(player.playerId);
 }
 
 export function buildDecisionConstraints(input: {
   targetTeam: string | null;
+  confirmedPosition?: Position | null;
   evaluatedPlayers: EvaluatedCandidate[];
   retrievedKnowledge: KnowledgeSearchResult[];
 }): RecruitmentDecisionConstraints {
+  const eligiblePlayers = input.evaluatedPlayers.filter(({ player }) =>
+    !input.confirmedPosition || player.position === input.confirmedPosition,
+  );
   const playerReportDocuments = input.retrievedKnowledge.filter((document) =>
     document.corpus === "player_report" && document.displayAllowed,
   );
   return {
     targetTeam: input.targetTeam,
-    evaluatedCandidates: input.evaluatedPlayers.map(({ player, evidence }) => ({
+    evaluatedCandidates: eligiblePlayers.map(({ player, evidence }) => ({
       playerId: player.playerId,
       evidenceKeys: evidence.map((item) => item.key),
     })),
-    reportObservations: input.evaluatedPlayers.flatMap(({ player, evidence }) => playerReportDocuments
-      .filter((document) => reportMatchesCandidate(document, player))
+    reportObservations: eligiblePlayers.flatMap(({ player, evidence }) => playerReportDocuments
+      .filter((document) => reportMatchesCandidate(document, player, eligiblePlayers))
       .map((document) => ({
         playerId: player.playerId,
         documentId: document.documentId,
@@ -101,6 +124,7 @@ export function buildDecisionConstraints(input: {
 
 export function validateConclusion(input: {
   action: ParsedRecruitmentAction | undefined;
+  confirmedPosition?: Position | null;
   evaluatedPlayers: Record<string, EvaluatedCandidate>;
   retrievedKnowledge: Record<string, KnowledgeSearchResult>;
 }): string[] {
@@ -116,6 +140,10 @@ export function validateConclusion(input: {
       problems.push(`球员 ${recommendation.playerId} 没有能力评估证据。`);
       continue;
     }
+    if (input.confirmedPosition && evaluated.player.position !== input.confirmedPosition) {
+      problems.push(`球员 ${recommendation.playerId} 不符合用户确认的位置 ${input.confirmedPosition}。`);
+      continue;
+    }
     const availableKeys = new Set(evaluated.evidence.map((item) => item.key));
     const invalidKeys = recommendation.evidenceKeys.filter((key) => !availableKeys.has(key));
     if (invalidKeys.length) problems.push(`球员 ${recommendation.playerId} 引用了不存在的证据：${invalidKeys.join(", ")}`);
@@ -124,7 +152,11 @@ export function validateConclusion(input: {
     const document = Object.values(input.retrievedKnowledge).find((candidate) => candidate.documentId === observation.documentId);
     const evaluated = input.evaluatedPlayers[observation.playerId];
     if (!evaluated) {
-      problems.push(`球员 ${observation.playerId} 没有比赛数据评估，不能附加报告观察。`);
+      problems.push(`球员 ${observation.playerId} 没有比赛数据评估，不能附加球员定性观察。`);
+      continue;
+    }
+    if (input.confirmedPosition && evaluated.player.position !== input.confirmedPosition) {
+      problems.push(`球员 ${observation.playerId} 不符合用户确认的位置 ${input.confirmedPosition}，不能附加球员定性观察。`);
       continue;
     }
     if (!document || document.corpus !== "player_report") {
@@ -132,12 +164,15 @@ export function validateConclusion(input: {
       continue;
     }
     if (!document.displayAllowed) problems.push(`来源 ${document.sourceName} 不允许在报告中展示。`);
-    if (!reportMatchesCandidate(document, evaluated.player)) {
+    const eligiblePlayers = Object.values(input.evaluatedPlayers).filter(({ player }) =>
+      !input.confirmedPosition || player.position === input.confirmedPosition,
+    );
+    if (!reportMatchesCandidate(document, evaluated.player, eligiblePlayers)) {
       problems.push(`报告文档 ${observation.documentId} 的实体元数据不匹配球员 ${evaluated.player.name}。`);
     }
     const availableKeys = new Set(evaluated.evidence.map((item) => item.key));
     const invalidKeys = observation.linkedMetricKeys.filter((key) => !availableKeys.has(key));
-    if (invalidKeys.length) problems.push(`报告观察引用了不存在的比赛指标：${invalidKeys.join(", ")}`);
+    if (invalidKeys.length) problems.push(`球员定性观察引用了不存在的比赛指标：${invalidKeys.join(", ")}`);
   }
   return problems;
 }

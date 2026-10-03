@@ -19,13 +19,24 @@ Labels: wayfinder:map
 - 使用 Fastify 注入测试覆盖调查、追问、恢复与证据报告；前后端类型检查、行为测试和网页生产构建均通过。
 - 已完成 [对话式招募案件 MVP](issues/08-conversational-case-mvp.md)：覆盖早期追问/结束保护、证据约束、证据覆盖摘要、案件状态失效提示、指标对比和 v1 计划迁移。
 - 已接入许可感知的双语料 RAG：PLOS 元数据发现与登记 DOI 正文采集、本地来源许可登记、LanceDB 混合检索、本地 q8 multilingual E5 embedding 和 LangGraph 的“方法画像 → 结构化评估 → 球员报告”顺序保护。已实际完成登记论文的许可核验、113 个片段入库和本地语义检索；尚无可用球员报告来源。
-- 本机 `.env` 已接入 Ollama `qwen3.5:9b`；[本地模型 Agent 验收](issues/11-local-model-agent-evaluation.md)标准中场与凯恩替代者两种场景均已通过。`pnpm eval:local-agent` 记录工具范围、结果数量和耗时，不记录密钥或模型隐藏推理；标准场景最近一次 180.2 秒完成 5 次模型决策，评估 5 名球员并输出 2 个有比赛证据支持的推荐。凯恩替代者场景检索本地参考球员后提出追问，恢复同案并按 ST 搜索；演示集没有中锋，所以继续追问且未跨位置推荐。动态结论 schema 限定可引用的球员、指标与报告文档，确定性测试仍不依赖模型密钥。
+- 本机 `.env` 已接入 Ollama `qwen3.5:9b`；[本地模型 Agent 验收](issues/11-local-model-agent-evaluation.md)保留早期隔离运行记录，后续评测会持续把模型能力与 harness 行为分开验证。已完成 [issue 15](issues/15-preserve-clarified-role-constraints.md)：明确确认的位置会约束同案续跑、候选评估和最终推荐。Harness 记录安全的工具轨迹，不评估无可信标签的球员排名。
+- 已修复 [issue 17](issues/17-harness-candidate-page-validation.md)：候选搜索轨迹与评测器现在校验总匹配数、页 offset 和 nextOffset；未请求的姓名过滤、跳过首屏和空页隐藏候选都会使行为验收失败。
+- 已完成 [issue 18](issues/18-preserve-target-team-context.md)：目标球队保存在 LangGraph 案件状态并单独传入 planner，不会变成候选俱乐部或联赛过滤条件。
+- 已完成 [issue 19](issues/19-grounded-replacement-clarification.md)：替代者请求的参考球员不会被误作候选姓名过滤，年龄限制只采纳用户明确表达的内容；宽泛调查后再围绕未明确的职责提问，并在同一案件恢复。2026-10-04 本机 Qwen 3.5 9B 场景复验 1/1 通过所有 harness 检查，包括确认中锋职责后如实报告演示数据中无匹配球员；这不是推荐准确率或真实联赛覆盖证明。
+- [issue 20](issues/20-licensed-player-provider-and-provenance.md) 的核心实现已完成：可选 Sportmonks provider 保留 provider/player/team/competition/season 身份、抓取时间与逐球员统计覆盖；部署者须显式登记账户已覆盖的统计类型，模型处理仍须先确认许可。球员卡显示来源与抓取时间；adapter 用 mock fixture 验证，真实账号与目标联赛联调待用户凭据及许可确认。
+- 已完成 [issue 21](issues/21-open-player-report-corpus.md)：没有找到明确允许自动获取、持久化、AI/RAG 处理与用户展示的真实具名球员报告语料；优先发展自有授权观察记录。明确标注虚构的 MIT 数据集只适合作为测试夹具，不冒充真实球员。
+- 已完成 [issue 22](issues/22-revoke-and-purge-knowledge-source.md)：每次检索重读许可，来源撤权对同一实例立即生效，并能从当前 LanceDB 表版本删除该来源行。旧历史版本的磁盘字节须另行停机维护清理，CLI 不会在线强制回收。
+- 已完成 [issue 23](issues/23-first-party-player-observations.md)：工作台可创建、查看、编辑和删除本机球探观察；逐条控制持久化与 AI/RAG 授权；检索结果保留作者、球员身份、日期和出处。撤权会移除当前 LanceDB 表版本中的文档；历史版本的磁盘字节不保证物理擦除。
+- [调查阶段反馈与有依据的追问](issues/16-progress-and-grounded-clarifications.md)已完成：长时间运行时显示 LangGraph 当前阶段、决策步数和耗时；参考球员无本地记录时，不再要求用户确认身份或未提出的联赛/赛季范围，并禁止依据模型记忆断言现役俱乐部/联赛。
 - [LangGraph Agent 与 Harness 调研](research/langgraph-agent-harness-patterns.md)现包含 Deep Agents、Open Deep Research、Exa、Lyft、Kensho、AppFolio、Open SWE 及两个足球项目的公开做法；共同模式是外层显式编排、窄职责分支、结构化交接和轨迹评估，不追求 Agent 数量。
 - [招募案件 checkpoint 跨重启恢复](issues/13-durable-case-checkpoints.md)完成：LangGraph 内部案件状态默认存本机 `.data/recruitment-cases.sqlite`，可用 `TACTISCOUT_CHECKPOINT_PATH` 改路径；追问暂停后 API 重启可由同一案件编号恢复。计划与可见历史仍在浏览器 `localStorage`。
+- [LangGraph harness 行为评估套件](issues/14-agent-harness-evaluation-suite.md)现支持具名场景、重复运行、轨迹隐私净化、候选 ID 顺序校验和 Ollama 全场景检查；实际模型失败暴露了追问后位置约束丢失，见后续 issue 15。
 - 使用 `.scratch/<feature>/` 保存地图、规格和单独的问题文件；本地 triage 标签沿用项目默认值。
 
 ## Decisions so far
 
+- [具名球员报告语料调查](issues/21-open-player-report-corpus.md)：没有找到明确允许自动获取、持久保存、AI/RAG 处理与面向用户展示的真实球员报告语料；近期优先做 TactiScout 自有授权观察记录，合成数据只作清楚标注的评测夹具。
+- [来源撤权和索引清除](issues/22-revoke-and-purge-knowledge-source.md)：检索时重读来源登记、预过滤无权语料，并允许删除当前 LanceDB 表版本中的来源片段。旧数据集版本的物理清理需停止所有访问进程后单独维护。
 - [使用全 TypeScript 和 LangGraph 组织球探流程](issues/01-typescript-langgraph.md)：继续现有 React、Fastify、LangGraph 架构。
 - [LLM 解析自然语言招募需求后由用户确认](issues/02-llm-brief-confirmation.md)：这是早期的表单式方案；其“固定字段确认后筛选”流程已被对话式调查和多轮评估方向取代。
 - [在 localStorage 保存招募计划和最近分析快照](issues/03-local-plan-snapshots.md)：手动重新分析并更新快照，不自动调度。
@@ -38,11 +49,20 @@ Labels: wayfinder:map
 - [许可感知的双语料球探 RAG](issues/10-permission-aware-rag-design.md)：报告作为带出处的定性证据参与候选发现与后续考察，不直接成为能力分；通过小型标注集分别评测检索、证据支持和 Agent 决策。
 - [Agent 架构加深](issues/12-agent-architecture-deepening.md)：集中结论证据和来源许可规则，统一应用运行依赖，去除重复工具 trace 分派。
 - [招募案件 checkpoint 跨重启恢复](issues/13-durable-case-checkpoints.md)：以本机 SQLite 持久化 LangGraph 案件状态；同一案件轮次按 thread 串行，不同案件并行。
+- [调查阶段反馈与有依据的追问](issues/16-progress-and-grounded-clarifications.md)：以案件级进度轮询呈现真实图阶段；将未请求的联赛/赛季范围追问作为策略违规反馈给 Agent，并继续调查用户已提供的角色。
+- [保留追问确认的位置约束](issues/15-preserve-clarified-role-constraints.md)：将用户确认的细分位置放入案件状态，并在检索、评估、报告与最终推荐中执行；泛位置不自动收窄，空结果明确报告。
+- [防止候选分页导致评测假通过](issues/17-harness-candidate-page-validation.md)：以匹配总数和返回游标校验候选发现，阻止跳页或未请求姓名过滤制造虚假空结果。
+- [保留目标球队上下文](issues/18-preserve-target-team-context.md)：从明确招募短语初始化案件目标球队，将其单独传入 planner，并在后续动作和报告中继承。
+- [将替代者调查与用户意图对齐](issues/19-grounded-replacement-clarification.md)：参考球员和推断年龄不作为筛选条件；先宽泛调查，再在同案中确认角色并按答案续跑。
+- [接入许可感知的实时球员 provider](issues/20-licensed-player-provider-and-provenance.md)：来源身份、provider 统计覆盖、抓取时间和模型处理许可门槛随候选记录保留；Sportmonks 的真实账号联调仍待完成。
+- [寻找可入库的具名球员报告语料](issues/21-open-player-report-corpus.md)：以一手来源验证球探报告的自动访问、持久化、AI/RAG 和展示权，选定可用来源或记录无可验证授权的结论。
+- [撤销知识来源并清除索引](issues/22-revoke-and-purge-knowledge-source.md)：运行中读取最新来源许可、检索前过滤失效语料，并显式删除某来源在当前本地索引版本中的片段。
+- [第一方球探观察记录](issues/23-first-party-player-observations.md)：在本机维护具名比赛观察，以分开的逐条许可控制保存和 Agent 检索；定性观察保留作者与来源，不能直接变成球员能力分。
+- 首个可选当前球员数据 provider 选择 Sportmonks，但仅在显式配置时启用；保留 StatsBomb 和演示数据作为独立来源，不合并跨 provider 的球员 ID。模型处理许可尚未从 provider 条款中确认，故 Sportmonks 数据经模型处理默认为关闭。
 
 ## Not yet specified
 
 - 如何按实际可用语料整理 RAG/Agent 标注样本、阈值和候选排序的可信评估；缺少球探标注时不宣称客观排序准确率。
-- 继续寻找允许保存并用于 AI/RAG 的具名球员报告来源；针对每个已准入来源补正文采集 adapter、刷新/删除策略。
 - 当前来源发现只覆盖 PLOS 学术文章；通用网页搜索 provider、最终 embedding 模型和 RAG/Agent 评测阈值仍待验证。
 - 选择哪家授权数据源、取得哪些赛事覆盖，以及线上缓存/展示/AI 使用的合同范围。
 

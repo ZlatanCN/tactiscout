@@ -17,6 +17,8 @@ test("app routes share the injected player and knowledge repositories", async ()
   };
   const knowledgeBase = {
     async search() { return []; },
+    async ingest() { return { documentId: "injected-document", chunkCount: 1 }; },
+    async removeDocument() { return 0; },
     async status() {
       knowledgeStatusReads += 1;
       return {

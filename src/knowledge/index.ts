@@ -20,6 +20,8 @@ import {
 } from "./schemas.js";
 import { starterKnowledgeDocuments } from "./seed.js";
 import { assertCanIngestDocument } from "./permissions.js";
+import { knowledgeDocumentId } from "./document-id.js";
+import { firstPartyObservationSourceId } from "./source-ids.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const tableName = "knowledge_chunks";
@@ -61,6 +63,8 @@ export interface KnowledgeRepository {
 
 export interface KnowledgeBase extends KnowledgeRepository {
   ingest(input: KnowledgeDocumentInput): Promise<{ documentId: string; chunkCount: number }>;
+  removeDocument(documentId: string): Promise<number>;
+  purgeSourceData(sourceId: string): Promise<number>;
   status(): Promise<KnowledgeStatus>;
 }
 
@@ -175,6 +179,17 @@ function sqlString(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
 
+function observationReferenceUrl(row: KnowledgeRow): string | undefined {
+  if (row.sourceId !== firstPartyObservationSourceId) return undefined;
+  const reference = row.attribution.match(/参考链接：https:\/\/[^\s；。]+/u)?.[0]?.slice("参考链接：".length);
+  if (!reference) return undefined;
+  try {
+    return new URL(reference).protocol === "https:" ? reference : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function tokenize(value: string): string[] {
   return value.toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
 }
@@ -245,8 +260,9 @@ function reciprocalRankFusion(rankings: string[][]): Map<string, number> {
   return scores;
 }
 
-function searchFilter(corpus: KnowledgeDocumentInput["corpus"]): string {
-  return `${allowedChunkSearch} AND corpus = ${sqlString(corpus)}`;
+function searchFilter(corpus: KnowledgeDocumentInput["corpus"], sourceIds: string[]): string {
+  const sourceList = sourceIds.map(sqlString).join(", ");
+  return `${allowedChunkSearch} AND corpus = ${sqlString(corpus)} AND sourceId IN (${sourceList})`;
 }
 
 function createKnowledgeSchema(vectorDimension: number): Schema {
@@ -286,7 +302,6 @@ export class LocalKnowledgeBase implements KnowledgeBase {
   private readonly seedDocuments: KnowledgeDocumentInput[];
   private connectionPromise: ReturnType<typeof connect> | undefined;
   private tablePromise: Promise<Table | undefined> | undefined;
-  private registryPromise: Promise<KnowledgeSource[]> | undefined;
   private seedsPromise: Promise<void> | undefined;
 
   constructor(options: {
@@ -308,7 +323,7 @@ export class LocalKnowledgeBase implements KnowledgeBase {
     assertCanIngestDocument(source, input);
     await this.assertIndexModelCompatible();
 
-    const documentId = createHash("sha256").update(`${input.sourceId}\n${input.url}\n${input.title}`).digest("hex");
+    const documentId = knowledgeDocumentId(input);
     const chunks = splitIntoChunks(input.content);
     const vectors = await embedMany(this.embedder, chunks, "passage");
     const rows: KnowledgeRow[] = [];
@@ -350,7 +365,14 @@ export class LocalKnowledgeBase implements KnowledgeBase {
     const table = await this.openTable();
     if (!table) return [];
     await this.assertIndexModelCompatible();
-    const filter = searchFilter(request.corpus);
+    const sourcesById = new Map((await this.sources()).map((source) => [source.id, source]));
+    const eligibleSourceIds = [...sourcesById.values()]
+      .filter((source) => source.allowedCorpora.includes(request.corpus)
+        && source.rights.persistentStorage
+        && source.rights.aiProcessing)
+      .map((source) => source.id);
+    if (!eligibleSourceIds.length) return [];
+    const filter = searchFilter(request.corpus, eligibleSourceIds);
     const [corpusRows, queryVector] = await Promise.all([
       table.query().where(filter).toArray() as Promise<KnowledgeRow[]>,
       this.embedder.embed(request.query, "query"),
@@ -380,7 +402,6 @@ export class LocalKnowledgeBase implements KnowledgeBase {
       if (explicitEntityMatch) fused.set(row.id, (fused.get(row.id) ?? 0) + 0.02);
     }
     const byId = new Map(allRows.map((row) => [row.id, row]));
-    const sourcesById = new Map((await this.sources()).map((source) => [source.id, source]));
     return [...fused.entries()]
       .sort((a, b) => b[1] - a[1])
       .slice(0, request.limit)
@@ -394,7 +415,7 @@ export class LocalKnowledgeBase implements KnowledgeBase {
           corpus: row.corpus,
           text: row.text,
           title: row.title,
-          url: row.url,
+          url: observationReferenceUrl(row) ?? row.url,
           sourceId: row.sourceId,
           sourceName: row.sourceName,
           publisher: row.publisher,
@@ -414,7 +435,14 @@ export class LocalKnowledgeBase implements KnowledgeBase {
   async status(): Promise<KnowledgeStatus> {
     const sources = await this.sources();
     const table = await this.openTable();
-    const rows = table ? await table.query().where(allowedChunkSearch).toArray() as KnowledgeRow[] : [];
+    const indexedRows = table ? await table.query().where(allowedChunkSearch).toArray() as KnowledgeRow[] : [];
+    const sourcesById = new Map(sources.map((source) => [source.id, source]));
+    const rows = indexedRows.filter((row) => {
+      const source = sourcesById.get(row.sourceId);
+      return source?.allowedCorpora.includes(row.corpus)
+        && source.rights.persistentStorage
+        && source.rights.aiProcessing;
+    });
     return KnowledgeStatusSchema.parse({
       indexedChunks: rows.length,
       methodologyChunks: rows.filter((row) => row.corpus === "methodology").length,
@@ -428,16 +456,43 @@ export class LocalKnowledgeBase implements KnowledgeBase {
     });
   }
 
+  async purgeSourceData(sourceId: string): Promise<number> {
+    const normalizedSourceId = sourceId.trim();
+    if (!normalizedSourceId) throw new Error("来源 ID 不能为空。");
+    const table = await this.openTable();
+    if (!table) return 0;
+    const result = await table.delete(`sourceId = ${sqlString(normalizedSourceId)}`);
+    return result.numDeletedRows;
+  }
+
+  async removeDocument(documentId: string): Promise<number> {
+    const normalizedDocumentId = documentId.trim();
+    if (!normalizedDocumentId) throw new Error("文档 ID 不能为空。");
+    const table = await this.openTable();
+    if (!table) return 0;
+    const result = await table.delete(`documentId = ${sqlString(normalizedDocumentId)}`);
+    return result.numDeletedRows;
+  }
+
   private async sources(): Promise<KnowledgeSource[]> {
-    this.registryPromise ??= readFile(this.registryPath, "utf8")
-      .then((contents) => JSON.parse(contents) as unknown)
-      .then((contents) => KnowledgeSourceSchema.array().parse(contents));
-    return this.registryPromise;
+    const contents = await readFile(this.registryPath, "utf8");
+    return KnowledgeSourceSchema.array().parse(JSON.parse(contents) as unknown);
   }
 
   private async ensureSeedDocuments(): Promise<void> {
     this.seedsPromise ??= (async () => {
-      for (const document of this.seedDocuments) await this.ingest(document);
+      const sourcesById = new Map((await this.sources()).map((source) => [source.id, source]));
+      for (const document of this.seedDocuments) {
+        const source = sourcesById.get(document.sourceId);
+        if (!source) continue;
+        try {
+          assertCanIngestDocument(source, document);
+        } catch (error) {
+          if (error instanceof KnowledgePermissionError) continue;
+          throw error;
+        }
+        await this.ingest(document);
+      }
     })();
     await this.seedsPromise;
   }

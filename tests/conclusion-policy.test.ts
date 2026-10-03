@@ -108,6 +108,76 @@ test("conclusion constraints only expose displayable player reports that match t
   assert.deepEqual(constraints.reportObservations.map(({ documentId }) => documentId), ["report-1"]);
 });
 
+test("first-party observations can match a player by provider identity when the observation stores that ID", () => {
+  const providerCandidate: EvaluatedCandidate = {
+    ...candidate,
+    player: {
+      ...candidate.player,
+      playerId: "sportmonks:123:team:4:season:2025",
+      sourceIdentity: {
+        provider: "sportmonks",
+        playerId: "123",
+        teamId: "4",
+        seasonId: "2025",
+        retrievedAt: "2026-10-04T10:00:00.000Z",
+      },
+    },
+  };
+  const providerObservation = {
+    ...playerReport,
+    documentId: "provider-observation",
+    entityIds: ["sportmonks:123"],
+    entityNames: ["An older alias"],
+  };
+  const mismatchedIdObservation = {
+    ...playerReport,
+    id: "chunk-mismatched-provider-id",
+    documentId: "mismatched-provider-id",
+    entityIds: ["sportmonks:456"],
+    entityNames: ["Jonas Vale"],
+  };
+  const constraints = buildDecisionConstraints({
+    targetTeam: null,
+    evaluatedPlayers: [providerCandidate],
+    retrievedKnowledge: [providerObservation, mismatchedIdObservation],
+  });
+
+  assert.deepEqual(constraints.reportObservations.map(({ documentId }) => documentId), ["provider-observation"]);
+});
+
+test("observations without stable IDs use exact names only when the evaluated candidate name is unique", () => {
+  const sameNameCandidate: EvaluatedCandidate = {
+    ...candidate,
+    player: { ...candidate.player, playerId: "candidate-2" },
+  };
+  const constraints = buildDecisionConstraints({
+    targetTeam: null,
+    evaluatedPlayers: [candidate, sameNameCandidate],
+    retrievedKnowledge: [playerReport],
+  });
+
+  assert.deepEqual(constraints.reportObservations, []);
+});
+
+test("an observation alias that matches another candidate name is treated as ambiguous", () => {
+  const aliasCandidate: EvaluatedCandidate = {
+    ...candidate,
+    player: { ...candidate.player, playerId: "candidate-alias", name: "An older alias" },
+  };
+  const aliasedObservation = {
+    ...playerReport,
+    documentId: "ambiguous-alias-report",
+    entityNames: ["An older alias", "Jonas Vale"],
+  };
+  const constraints = buildDecisionConstraints({
+    targetTeam: null,
+    evaluatedPlayers: [candidate, aliasCandidate],
+    retrievedKnowledge: [aliasedObservation],
+  });
+
+  assert.deepEqual(constraints.reportObservations, []);
+});
+
 test("deterministic conclusion review rejects duplicate candidates and mismatched report entities", () => {
   const action = validFinish();
   const duplicateRecommendation: ParsedRecruitmentAction = {

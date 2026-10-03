@@ -46,10 +46,10 @@ const actions: RecruitmentAction[] = mode === "pause"
       { action: "inspect_team", teamName: "Bayern Munich" },
       { action: "search_methodology", query: "中锋接班人的能力画像" },
       { action: "search_candidates", position: "ST", minimumMinutes: 0, limit: 10 },
-      { action: "evaluate_candidates", playerIds: [player.playerId] },
-      { action: "ask_user", question: "优先即战力还是培养接班人？", reason: "这会影响目标能力画像。" },
-    ]
+  ]
   : [
+      { action: "search_candidates", position: "ST", minimumMinutes: 0, limit: 10 },
+      { action: "evaluate_candidates", playerIds: [player.playerId] },
       { action: "search_player_reports", query: "中锋终结观察", playerNames: [player.name] },
       {
         action: "finish",
@@ -77,7 +77,7 @@ try {
     url: `/api/v1/recruitment/cases/${threadId}/turns`,
     payload: mode === "pause"
       ? { message: "为拜仁寻找凯恩的替代者" }
-      : { message: "未来两三年接班，希望有主力潜质", expectsExistingState: true },
+      : { message: "按中锋职责，未来两三年接班，希望有主力潜质。", expectsExistingState: true },
   });
   console.log(`RESULT:${JSON.stringify({ statusCode: response.statusCode, body: response.json() })}`);
 } finally {

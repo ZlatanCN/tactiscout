@@ -44,7 +44,16 @@ if (command === "discover") {
     console.error(message);
     process.exitCode = 1;
   }
+} else if (command === "purge-source" && fileArgument) {
+  try {
+    const removedChunks = await createLocalKnowledgeBase().purgeSourceData(fileArgument);
+    console.log(`已从本地知识索引清除来源 ${fileArgument.trim()} 的 ${removedChunks} 个片段。`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "来源索引清除失败。";
+    console.error(message);
+    process.exitCode = 1;
+  }
 } else {
-  console.error("用法：pnpm knowledge:discover -- <搜索词>\n      pnpm knowledge:crawl -- <已获准 PLOS DOI>\n      pnpm knowledge:ingest -- <已获准来源的文档 JSON 文件>");
+  console.error("用法：pnpm knowledge:discover -- <搜索词>\n      pnpm knowledge:crawl -- <已获准 PLOS DOI>\n      pnpm knowledge:ingest -- <已获准来源的文档 JSON 文件>\n      pnpm knowledge:purge-source -- <来源 ID>");
   process.exitCode = 2;
 }

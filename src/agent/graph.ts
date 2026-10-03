@@ -2,6 +2,7 @@ import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 import {
   ScoutInputSchema,
   ScoutResponseSchema,
+  type DatasetMode,
   type PlayerProfile,
   type RankedCandidate,
   type Requirements,
@@ -27,7 +28,7 @@ const ScoutState = Annotation.Root({
   rankings: replaceable<RankedCandidate[]>(() => []),
   review: replaceable<ScoutResponse["review"] | undefined>(() => undefined),
   retryCount: replaceable<number>(() => 0),
-  datasetMode: replaceable<"demo" | "statsbomb">(() => "demo"),
+  datasetMode: replaceable<DatasetMode>(() => "demo"),
   dataSource: replaceable<string>(() => ""),
   report: replaceable<ScoutResponse | undefined>(() => undefined),
 });
@@ -57,8 +58,12 @@ function buildCaveats(requirements: Requirements, repo: PlayerRepository): strin
     "推进维度使用带球次数和长传次数作为粗略代理；不能替代方向校正后的 progressive actions。",
     "机会创造使用射门助攻和助攻次数作为粗略代理；未评估机会质量或传球难度。",
     "施压、抢断与拦截反映动作次数，不代表成功率或所在战术位置。",
-    "球员位置取 StatsBomb 阵容记录中的主要位置，跨位置球员可能被简化归类。",
-    "目标球队目前只用于报告语境；MVP 尚未接入俱乐部战术画像、预算、合同或伤病数据。",
+    ...(repo.mode === "statsbomb" ? ["球员位置取 StatsBomb 阵容记录中的主要位置，跨位置球员可能被简化归类。"] : []),
+    ...(repo.mode === "sportmonks" ? [
+      "Sportmonks 只查询服务端配置的当前赛季和该 provider 的球队名单；未取得订阅覆盖的联赛不会出现在候选池中。",
+      "Sportmonks 统计不含 GPS/追踪数据；本版不映射带球次数、施压或射门助攻，未覆盖的指标不会按零值评分。",
+    ] : []),
+    "目标球队名单只用于检查可用的阵容样本，不代表已建立球队战术画像；MVP 尚未接入预算、合同或伤病数据。",
     "证据完整度描述候选池覆盖和出场样本；职责属性的数据缺口会单独列出，不代表推荐正确概率。",
     "职责权重是启发式规则，尚未使用历史数据校准；分钟数单独作为样本风险，不会加进适配分。",
     ...(requirements.maxAge !== undefined && repo.mode === "statsbomb"
@@ -90,7 +95,7 @@ function createWorkflow(repo: PlayerRepository) {
     .addNode("tactical_fit", (current: State) => ({
       tacticalFits: current.candidates.map((player) => ({
         playerId: player.playerId,
-        assessments: assessRoles(current.requirements as Requirements, toPer90(player)),
+        assessments: assessRoles(current.requirements as Requirements, player),
       })),
     }))
     .addNode("rank_candidates", (current: State) => {
@@ -99,7 +104,7 @@ function createWorkflow(repo: PlayerRepository) {
       const fitById = new Map(current.tacticalFits.map((entry) => [entry.playerId, entry.assessments]));
       const rankings: RankedCandidate[] = current.candidates.map((player) => {
         const per90 = statsById.get(player.playerId) ?? toPer90(player);
-        const roleAssessments = fitById.get(player.playerId) ?? assessRoles(requirements, per90);
+        const roleAssessments = fitById.get(player.playerId) ?? assessRoles(requirements, player);
         const inPossessionFit = averageFit(roleAssessments.filter((assessment) => assessment.phase === "in_possession"));
         const outOfPossessionFit = averageFit(roleAssessments.filter((assessment) => assessment.phase === "out_of_possession"));
         const tacticalFit = averageFit(roleAssessments) ?? 0;
@@ -119,12 +124,20 @@ function createWorkflow(repo: PlayerRepository) {
       if (current.allPlayers.length === 0 && repo.mode === "statsbomb") {
         findings.push("没有读取到 StatsBomb 球员记录；请检查数据目录和 JSON 文件是否完整。");
       }
+      if (current.allPlayers.length === 0 && repo.mode === "sportmonks") {
+        findings.push("Sportmonks 已成功返回空名单；请检查配置的当前赛季 ID 和 provider 的联赛覆盖。");
+      }
       if (current.allPlayers.some((player) => player.eventDataComplete === false)) {
         findings.push("部分阵容记录缺少对应比赛事件文件；这些记录不会参与表现排序。");
       }
+      if (current.allPlayers.some((player) => ["DEF", "MID", "ATT"].includes(player.position))) {
+        findings.push("部分球员只有后卫、中场或前锋的宽泛位置记录；系统没有推断具体子位置。");
+      }
       if (candidates.length === 0) findings.push("没有候选人满足当前筛选条件。");
-      if (requirements.maxAge !== undefined && repo.mode === "statsbomb" && current.allPlayers.some((player) => player.position === requirements.position && player.age === null)) {
-        findings.push("有位置符合的球员年龄未知并被排除；StatsBomb 开放数据不含出生日期，请配置人口信息 sidecar。");
+      if (requirements.maxAge !== undefined && current.allPlayers.some((player) => player.position === requirements.position && player.age === null)) {
+        findings.push(repo.mode === "statsbomb"
+          ? "有位置符合的球员年龄未知并被排除；StatsBomb 开放数据不含出生日期，请配置人口信息 sidecar。"
+          : "有位置符合的球员年龄未知并被排除；请在来源中核实出生日期后再评估年龄限制。");
       }
       if (evidenceCoverage < 1 && candidates.length > 0) findings.push("部分候选人的出场样本少于 900 分钟。");
       if (candidates.some((candidate) => candidate.player.age === null)) findings.push("部分候选人年龄未知；请核实年龄后再用于引援决策。");

@@ -1,7 +1,10 @@
 import { z } from "zod/v4";
 
-export const PositionSchema = z.enum(["GK", "CB", "LB", "RB", "LWB", "RWB", "DM", "CM", "AM", "LW", "RW", "ST"]);
+export const PositionSchema = z.enum(["GK", "DEF", "CB", "LB", "RB", "LWB", "RWB", "MID", "DM", "CM", "AM", "ATT", "LW", "RW", "ST"]);
 export type Position = z.infer<typeof PositionSchema>;
+
+export const DatasetModeSchema = z.enum(["demo", "statsbomb", "sportmonks"]);
+export type DatasetMode = z.infer<typeof DatasetModeSchema>;
 
 export const InPossessionRoleSchema = z.enum(["progression", "retention", "creation"]);
 export type InPossessionRole = z.infer<typeof InPossessionRoleSchema>;
@@ -73,6 +76,31 @@ export const RawStatsSchema = z.object({
   shotAssists: z.number().default(0),
 });
 
+export const RawStatKeySchema = z.enum([
+  "goals",
+  "assists",
+  "passesAttempted",
+  "passesCompleted",
+  "longPasses",
+  "carries",
+  "pressures",
+  "tackles",
+  "interceptions",
+  "shotAssists",
+]);
+export type RawStatKey = z.infer<typeof RawStatKeySchema>;
+
+export const PlayerDataSourceIdentitySchema = z.object({
+  provider: z.string().min(1),
+  playerId: z.string().min(1),
+  teamId: z.string().optional(),
+  competitionId: z.string().optional(),
+  seasonId: z.string().optional(),
+  retrievedAt: z.string().datetime(),
+  isCurrentSeason: z.boolean().optional(),
+});
+export type PlayerDataSourceIdentity = z.infer<typeof PlayerDataSourceIdentitySchema>;
+
 export const PlayerProfileSchema = z.object({
   playerId: z.string(),
   externalPlayerId: z.string().optional(),
@@ -86,21 +114,23 @@ export const PlayerProfileSchema = z.object({
   season: z.string(),
   minutes: z.number().nonnegative(),
   stats: RawStatsSchema,
+  sourceIdentity: PlayerDataSourceIdentitySchema.optional(),
+  availableStats: z.array(RawStatKeySchema).optional(),
   eventDataComplete: z.boolean().optional(),
   source: z.string(),
 });
 export type PlayerProfile = z.infer<typeof PlayerProfileSchema>;
 
 export const Per90Schema = z.object({
-  goals: z.number(),
-  assists: z.number(),
-  passesAttempted: z.number(),
+  goals: z.number().nullable(),
+  assists: z.number().nullable(),
+  passesAttempted: z.number().nullable(),
   passCompletionPct: z.number().nullable(),
-  longPasses: z.number(),
-  carries: z.number(),
-  pressures: z.number(),
-  tacklesInterceptions: z.number(),
-  shotAssists: z.number(),
+  longPasses: z.number().nullable(),
+  carries: z.number().nullable(),
+  pressures: z.number().nullable(),
+  tacklesInterceptions: z.number().nullable(),
+  shotAssists: z.number().nullable(),
 });
 export type Per90 = z.infer<typeof Per90Schema>;
 
@@ -138,7 +168,7 @@ export const ScoutResponseSchema = z.object({
   targetTeam: z.string(),
   requirements: RequirementsSchema,
   dataSource: z.string(),
-  datasetMode: z.enum(["demo", "statsbomb"]),
+  datasetMode: DatasetModeSchema,
   candidates: z.array(RankedCandidateSchema),
   review: ReviewSchema,
   caveats: z.array(z.string()),
@@ -146,7 +176,7 @@ export const ScoutResponseSchema = z.object({
 export type ScoutResponse = z.infer<typeof ScoutResponseSchema>;
 
 export const DatasetStatusSchema = z.object({
-  mode: z.enum(["demo", "statsbomb"]),
+  mode: DatasetModeSchema,
   source: z.string(),
 });
 export type DatasetStatus = z.infer<typeof DatasetStatusSchema>;
@@ -244,7 +274,7 @@ export const RecruitmentSearchScopeSchema = z.object({
   minimumMinutes: z.number().int().nonnegative(),
   competition: z.string().nullable(),
   season: z.string().nullable(),
-  source: z.enum(["agent_interpreted", "user_confirmed"]),
+  source: z.enum(["agent_interpreted", "user_confirmed", "mixed"]),
 });
 export type RecruitmentSearchScope = z.infer<typeof RecruitmentSearchScopeSchema>;
 
@@ -264,7 +294,7 @@ export const RecruitmentReportSchema = z.object({
   recommendations: z.array(PlayerRecommendationSchema).max(5),
   limitations: z.array(z.string()),
   dataSource: z.string(),
-  datasetMode: z.enum(["demo", "statsbomb"]),
+  datasetMode: DatasetModeSchema,
 });
 export type RecruitmentReport = z.infer<typeof RecruitmentReportSchema>;
 
@@ -276,3 +306,27 @@ export const ConversationTurnResponseSchema = z.object({
   report: RecruitmentReportSchema.nullable(),
 });
 export type ConversationTurnResponse = z.infer<typeof ConversationTurnResponseSchema>;
+
+export const RecruitmentProgressStageSchema = z.enum([
+  "starting",
+  "planning",
+  "methodology",
+  "team_sample",
+  "candidate_search",
+  "player_evaluation",
+  "report_search",
+  "review",
+  "asking_user",
+  "completed",
+  "failed",
+]);
+export type RecruitmentProgressStage = z.infer<typeof RecruitmentProgressStageSchema>;
+
+export const RecruitmentProgressSchema = z.object({
+  active: z.boolean(),
+  stage: RecruitmentProgressStageSchema,
+  message: z.string().min(1),
+  completedSteps: z.number().int().nonnegative(),
+  updatedAt: z.string().datetime(),
+});
+export type RecruitmentProgress = z.infer<typeof RecruitmentProgressSchema>;

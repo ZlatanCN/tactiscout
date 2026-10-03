@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { getDatasetStatus, turnRecruitmentCase } from "./api";
+import { getDatasetStatus, getRecruitmentProgress, turnRecruitmentCase } from "./api";
 import { buildEvidenceComparison, toggleComparedPlayer } from "./comparison";
 import { SearchableTeamSelect } from "./SearchableTeamSelect";
+import { PlayerObservationsDialog } from "./PlayerObservationsDialog";
 import {
   loadRecruitmentPlans,
   messageFromTurn,
@@ -11,7 +12,8 @@ import {
   type ConversationMessage,
   type SavedRecruitmentPlan,
 } from "./plans";
-import type { DatasetStatus, RecruitmentReport } from "../../src/domain/schemas.js";
+import type { DatasetStatus, RecruitmentProgress, RecruitmentReport } from "../../src/domain/schemas.js";
+import { firstPartyObservationSourceId } from "../../src/knowledge/source-ids.js";
 
 const suggestedBriefs = [
   "为拜仁寻找凯恩的替代者，重点看能接应、做球和终结的前锋",
@@ -34,8 +36,12 @@ function App() {
   const [activePlanId, setActivePlanId] = useState<string | null>(null);
   const [hasConversationState, setHasConversationState] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState<RecruitmentProgress | null>(null);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [playerObservationsOpen, setPlayerObservationsOpen] = useState(false);
 
   useEffect(() => {
     getDatasetStatus().then(setDataset).catch(() => setDataset(null));
@@ -48,6 +54,30 @@ function App() {
 
   const datasetLabel = dataset?.mode === "statsbomb" ? "StatsBomb Open Data" : dataset?.source ?? "数据源状态未知";
   const waitingForAnswer = status === "needs_input";
+
+  useEffect(() => {
+    if (!loading || startedAt === null) return;
+    const updateElapsed = () => setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+    updateElapsed();
+    const elapsedTimer = window.setInterval(updateElapsed, 1000);
+    let cancelled = false;
+    let pollTimer: number | undefined;
+    const pollProgress = async () => {
+      try {
+        const current = await getRecruitmentProgress(threadId);
+        if (!cancelled) setProgress(current);
+      } catch {
+        // Keep showing elapsed time if a progress poll fails; the turn request remains authoritative.
+      }
+      if (!cancelled) pollTimer = window.setTimeout(() => void pollProgress(), 1200);
+    };
+    void pollProgress();
+    return () => {
+      cancelled = true;
+      window.clearInterval(elapsedTimer);
+      if (pollTimer !== undefined) window.clearTimeout(pollTimer);
+    };
+  }, [loading, startedAt, threadId]);
 
   function persistPlans(nextPlans: SavedRecruitmentPlan[], successMessage?: string) {
     try {
@@ -95,7 +125,17 @@ function App() {
   async function sendMessage(messageText = draft) {
     const text = messageText.trim();
     if (!text || loading) return;
+    const requestStartedAt = Date.now();
     setLoading(true);
+    setStartedAt(requestStartedAt);
+    setElapsedSeconds(0);
+    setProgress({
+      active: true,
+      stage: "starting",
+      message: "正在启动本轮球探调查",
+      completedSteps: 0,
+      updatedAt: new Date(requestStartedAt).toISOString(),
+    });
     setError(null);
     setNotice(null);
 
@@ -221,6 +261,7 @@ function App() {
         </a>
         <div className="topbar-meta">
           <span className={`source-pill ${dataset?.mode === "statsbomb" ? "source-pill-live" : ""}`}><span className="status-dot" />{datasetLabel}</span>
+          <button type="button" className="text-button observations-open-button" onClick={() => setPlayerObservationsOpen(true)}>球探观察</button>
           <span className="topbar-caption">对话式球探工作台 <span>·</span> MVP</span>
         </div>
       </header>
@@ -269,7 +310,7 @@ function App() {
                   </div>
                 </article>
               ))}
-              {loading && <div className="chat-message chat-message-assistant"><span className="assistant-avatar">TS</span><div className="chat-bubble typing-indicator"><span /><span /><span /><small>正在研究候选球员和数据依据…</small></div></div>}
+              {loading && <div className="chat-message chat-message-assistant"><span className="assistant-avatar">TS</span><div className="chat-bubble recruitment-progress" role="status" aria-live="polite"><div className="recruitment-progress-heading"><span className="recruitment-progress-spinner" aria-hidden="true" /><strong>{progress?.message ?? "正在启动本轮球探调查"}</strong></div><div className="recruitment-progress-meta"><span>已等待 {Math.floor(elapsedSeconds / 60)}:{String(elapsedSeconds % 60).padStart(2, "0")}</span>{progress && <span>已完成 {progress.completedSteps} 个 Agent 决策步骤</span>}</div>{elapsedSeconds >= 20 && <small>本地模型分析需要一些时间；结果返回前无需重复发送。</small>}</div></div>}
               {waitingForAnswer && !loading && <p className="turn-hint">补充信息后，Agent 会在同一案件中继续调查。</p>}
             </div>
 
@@ -297,6 +338,7 @@ function App() {
           </section>
         </div>
       </main>
+      {playerObservationsOpen && <PlayerObservationsDialog onClose={() => setPlayerObservationsOpen(false)} />}
       <footer className="site-footer"><span>TactiScout <b>·</b> Football scouting research prototype</span><span>DATA SHOULD EXPLAIN THE RECOMMENDATION.</span></footer>
     </div>
   );
@@ -356,7 +398,7 @@ function RecruitmentReportView({ report, reportedAt, isWaiting }: { report: Recr
       {isWaiting && <p className="snapshot-warning">正在等待补充信息。下方保留最近一次完整报告，后续调查完成后会更新。</p>}
       <section className="need-summary"><span className="report-section-label">需求理解</span><p>{report.needSummary}</p></section>
       {report.capabilityProfile.length > 0 && <section className="capability-profile"><span className="report-section-label">目标能力画像 · Agent 根据需求推导，可继续修正</span><ul>{report.capabilityProfile.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul></section>}
-      {report.searchScopes.length > 0 && <section className="search-scope"><span className="report-section-label">候选检索范围</span><p>以下是 Agent 实际使用的条件；可继续在对话中补充或纠正。</p><ul>{report.searchScopes.map((scope, index) => <li key={`${scope.source}-${index}`}><strong>{scope.source === "user_confirmed" ? "用户确认" : "Agent 根据对话解释"}</strong>{" · "}{[
+      {report.searchScopes.length > 0 && <section className="search-scope"><span className="report-section-label">候选检索范围</span><p>以下是 Agent 实际使用的条件；可继续在对话中补充或纠正。</p><ul>{report.searchScopes.map((scope, index) => <li key={`${scope.source}-${index}`}><strong>{scope.source === "user_confirmed" ? "用户确认" : scope.source === "mixed" ? "包含用户确认条件" : "Agent 根据对话解释"}</strong>{" · "}{[
         scope.position ? `位置 ${scope.position}` : null,
         scope.maxAge !== null ? `${scope.maxAge} 岁及以下` : null,
         scope.minimumMinutes > 0 ? `至少 ${scope.minimumMinutes} 分钟` : null,
@@ -416,6 +458,7 @@ function RecommendationCard({ recommendation, rank, selected, selectionDisabled,
     <article className="recommendation-card">
       <div className="recommendation-card-heading"><span className="candidate-rank">{String(rank).padStart(2, "0")}</span><div className="candidate-title"><h3>{player.name}</h3><span>{player.team} <i>·</i> {player.competition} {player.season}</span></div></div>
       <div className="candidate-meta"><span>{player.position}</span><span>{player.age === null ? "年龄未知" : `${player.age} 岁`}</span><span>{player.minutes.toLocaleString()} 分钟</span></div>
+      <p className="player-provenance">数据来源：{player.source}{player.sourceIdentity?.retrievedAt ? ` · 抓取于 ${formatDate(player.sourceIdentity.retrievedAt)}` : ""}</p>
       <label className="compare-select"><input type="checkbox" checked={selected} disabled={selectionDisabled} onChange={onToggle} /><span>加入比较</span></label>
       <p className="recommendation-rationale">{recommendation.rationale}</p>
       <div className="evidence-columns">
@@ -423,7 +466,19 @@ function RecommendationCard({ recommendation, rank, selected, selectionDisabled,
         <div className="risk-column"><strong className="evidence-label">取舍与待核实</strong>{recommendation.tradeoffs.length ? <ul>{recommendation.tradeoffs.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul> : <p>未单独标注</p>}</div>
       </div>
       {recommendation.evidence.length > 0 && <div className="evidence-table-wrap"><table className="evidence-table"><thead><tr><th>可观测指标</th><th>数值</th><th>对比组</th></tr></thead><tbody>{recommendation.evidence.map((evidence) => <tr key={evidence.key}><th scope="row">{evidence.label}{recommendation.focusEvidenceKeys.includes(evidence.key) && <small className="focus-evidence-tag">本轮重点</small>}</th><td>{formatMetric(evidence.value)} {evidence.unit}</td><td>{evidence.peerPercentile === null ? `样本 ${evidence.peerGroupSize} 人，不显示百分位` : `第 ${evidence.peerPercentile} 百分位 · ${evidence.peerGroupSize} 人`}</td></tr>)}</tbody></table></div>}
-      {recommendation.reportObservations.length > 0 && <section className="report-observations"><strong className="evidence-label">球探报告观察</strong><ul>{recommendation.reportObservations.map((observation, index) => <li key={`${observation.source.sourceId}-${index}`}><p>{observation.summary}</p><small>{observation.verificationStatus === "linked_to_match_data" ? `关联比赛数据：${observation.linkedMetricKeys.join("、")}；需人工核实完整语义。` : "当前比赛数据未核实，作为单一来源的定性观点。"}</small><a href={observation.source.url} target="_blank" rel="noreferrer">{observation.source.title} · {observation.source.author} · {observation.source.license}</a><small>{observation.source.attribution}</small></li>)}</ul></section>}
+      {recommendation.reportObservations.length > 0 && <section className="report-observations"><strong className="evidence-label">球员定性观察</strong><ul>{recommendation.reportObservations.map((observation, index) => {
+        const firstParty = observation.source.sourceId === firstPartyObservationSourceId;
+        const internalObservationUrl = firstParty && new URL(observation.source.url).hostname === "tactiscout.local";
+        return <li key={`${observation.source.sourceId}-${index}`}>
+          <p>{observation.summary}</p>
+          <small>{observation.verificationStatus === "linked_to_match_data" ? `关联比赛数据：${observation.linkedMetricKeys.join("、")}；需人工核实完整语义。` : "当前比赛数据未核实，作为单一来源的定性观点。"}</small>
+          {firstParty && <small className="observation-origin">TactiScout 自录观察 · 作者观点，未经独立核实</small>}
+          {internalObservationUrl
+            ? <small>没有提供外部参考链接；此观察只保存在本机。</small>
+            : <a href={observation.source.url} target="_blank" rel="noreferrer">{firstParty ? "打开观察者提供的参考链接" : `${observation.source.title} · ${observation.source.author} · ${observation.source.license}`}</a>}
+          <small>{observation.source.attribution}</small>
+        </li>;
+      })}</ul></section>}
     </article>
   );
 }

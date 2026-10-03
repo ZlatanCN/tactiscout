@@ -17,5 +17,22 @@
     },
     "rightsVerifiedAt": "2026-09-29",
     "rightsNote": "文章按 CC BY 发布，PLOS 条款要求遵守署名；期刊说明支持通过 PLOS API、PMC 或 Europe PMC 以程序方式访问。自动获取应优先使用官方 API；官方限额为每分钟 10 次、每次不超过 100 条，并要求注明内容来自 PLOS。当前适配器每进程请求间隔至少 6 秒、最多返回 20 条。仅登记本文方法资料，不登记具名球员报告。"
+  },
+  {
+    "id": "tactiscout-first-party-observations",
+    "name": "TactiScout 球探自录观察",
+    "publisher": "TactiScout 与本机用户",
+    "rightsUrl": "https://tactiscout.local/privacy/player-observations",
+    "license": "用户自录观察；仅依照记录中的本地保存与模型处理授权使用",
+    "allowedCorpora": ["player_report"],
+    "allowedUrlPrefixes": ["https://tactiscout.local/player-observations/"],
+    "rights": {
+      "automatedFetch": false,
+      "persistentStorage": true,
+      "aiProcessing": true,
+      "display": true
+    },
+    "rightsVerifiedAt": "2026-10-04",
+    "rightsNote": "只索引用户在本机创建并明确同意持久化和 AI/RAG 处理的第一方观察。不会抓取外部 URL；观察者须确认有权保存并处理自己的笔记。该记录是主观观察，不是已验证的球员事实。"
   }
 ]

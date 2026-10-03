@@ -3,16 +3,19 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   PlayerProfileSchema,
+  type DatasetMode,
   type PlayerProfile,
   type Position,
   type Requirements,
 } from "../domain/schemas.js";
+import { positionMatches } from "../domain/positions.js";
+import { SportmonksPlayerRepository, SportmonksProviderError } from "./sportmonks-provider.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const demoFile = path.join(projectRoot, "data", "demo-players.json");
 
 export interface PlayerRepository {
-  readonly mode: "demo" | "statsbomb";
+  readonly mode: DatasetMode;
   readonly sourceName: string;
   loadPlayers(refresh?: boolean): Promise<PlayerProfile[]>;
 }
@@ -25,6 +28,9 @@ interface DemoDataset {
 interface MutablePlayer {
   playerId: string;
   sourcePlayerId: string;
+  sourceTeamId?: string;
+  competitionId: string;
+  seasonId: string;
   name: string;
   team: string;
   position: Position;
@@ -106,10 +112,13 @@ function mapPosition(value: unknown): Position | undefined {
   if (name.includes("right wing back")) return "RWB";
   if (name.includes("defensive midfield") || name.includes("holding midfield")) return "DM";
   if (name.includes("attacking midfield")) return "AM";
+  if (name.includes("central midfield") || name.includes("centre midfield") || name.includes("center midfield")) return "CM";
   if (name.includes("centre forward") || name.includes("center forward") || name.includes("striker")) return "ST";
-  if (name.includes("left wing")) return "LW";
-  if (name.includes("right wing")) return "RW";
-  if (name.includes("midfield")) return "CM";
+  if (name.includes("left wing") || name.includes("left winger")) return "LW";
+  if (name.includes("right wing") || name.includes("right winger")) return "RW";
+  if (name.includes("defender")) return "DEF";
+  if (name.includes("attacker") || name === "forward") return "ATT";
+  if (name.includes("midfield")) return "MID";
   return undefined;
 }
 
@@ -171,6 +180,7 @@ function getMutable(players: Map<string, MutablePlayer>, key: string, seed: Omit
 
 async function loadStatsBombPlayers(): Promise<PlayerProfile[]> {
   const root = dataRoot();
+  const retrievedAt = new Date().toISOString();
   const [matchFiles, eventFiles, lineupFiles, demographics] = await Promise.all([
     walkJsonFiles(path.join(root, "matches")),
     walkJsonFiles(path.join(root, "events")),
@@ -220,9 +230,11 @@ async function loadStatsBombPlayers(): Promise<PlayerProfile[]> {
               const to = clockMinutes(segment.to);
               if (to !== undefined && to > from) minutes += to - from;
             }
+            const teamId = teamData.team_id ?? asRecord(teamData.team).id;
             const recordId = [id, compId, season, team].join(":");
             const item = getMutable(players, recordId, {
-              playerId: recordId, sourcePlayerId: id, name: playerName, team, position, competition, season, minutes: 0, eventDataComplete: true,
+              playerId: recordId, sourcePlayerId: id, ...(teamId === undefined ? {} : { sourceTeamId: String(teamId) }),
+              competitionId: compId, seasonId, name: playerName, team, position, competition, season, minutes: 0, eventDataComplete: true,
             });
             item.eventDataComplete &&= eventDataAvailable;
             item.minutes += minutes;
@@ -243,7 +255,7 @@ async function loadStatsBombPlayers(): Promise<PlayerProfile[]> {
         const position = mapPosition(event.position?.name) ?? "CM";
         const recordId = [id, compId, season, team].join(":");
         const item = getMutable(players, recordId, {
-          playerId: recordId, sourcePlayerId: id, name: playerName, team, position, competition, season, minutes: 0, eventDataComplete: true,
+          playerId: recordId, sourcePlayerId: id, competitionId: compId, seasonId, name: playerName, team, position, competition, season, minutes: 0, eventDataComplete: true,
         });
         const type = String(event.type?.name ?? "");
         const pass = asRecord(event.pass);
@@ -271,6 +283,14 @@ async function loadStatsBombPlayers(): Promise<PlayerProfile[]> {
       age: demographics.get(item.sourcePlayerId)?.age ?? null,
       ageSource: demographics.get(item.sourcePlayerId)?.source,
       ageVerifiedAt: demographics.get(item.sourcePlayerId)?.verifiedAt,
+      sourceIdentity: {
+        provider: "statsbomb-open-data",
+        playerId: item.sourcePlayerId,
+        ...(item.sourceTeamId ? { teamId: item.sourceTeamId } : {}),
+        competitionId: item.competitionId,
+        seasonId: item.seasonId,
+        retrievedAt,
+      },
       stats: {
         goals: item.goals, assists: item.assists, passesAttempted: item.passesAttempted,
         passesCompleted: item.passesCompleted, longPasses: item.longPasses, carries: item.carries,
@@ -308,15 +328,36 @@ export class StatsBombRepository implements PlayerRepository {
 }
 
 export function createRepository(): PlayerRepository {
-  return process.env.TACTISCOUT_DATA_MODE?.toLowerCase() === "statsbomb"
-    ? new StatsBombRepository()
-    : new DemoPlayerRepository();
+  const mode = (process.env.TACTISCOUT_DATA_MODE ?? "demo").trim().toLowerCase();
+  if (mode === "statsbomb") return new StatsBombRepository();
+  if (mode === "demo") return new DemoPlayerRepository();
+  if (mode === "sportmonks") {
+    const cacheLifetimeText = process.env.TACTISCOUT_SPORTMONKS_CACHE_TTL_MS;
+    const cacheTtlMs = cacheLifetimeText === undefined || cacheLifetimeText.trim() === ""
+      ? undefined
+      : Number(cacheLifetimeText);
+    if (cacheLifetimeText !== undefined && cacheLifetimeText.trim() !== "" && !Number.isFinite(cacheTtlMs)) {
+      throw new SportmonksProviderError("invalid_configuration", "TACTISCOUT_SPORTMONKS_CACHE_TTL_MS must be a non-negative number of milliseconds.");
+    }
+    return new SportmonksPlayerRepository({
+      token: process.env.SPORTMONKS_API_TOKEN ?? "",
+      seasonIds: (process.env.TACTISCOUT_SPORTMONKS_SEASON_IDS ?? "").split(","),
+      coveredStatisticTypeIds: (process.env.TACTISCOUT_SPORTMONKS_COVERED_STATISTIC_TYPE_IDS ?? "")
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean)
+        .map(Number),
+      allowModelProcessing: process.env.TACTISCOUT_SPORTMONKS_AI_PROCESSING_ALLOWED === "true",
+      ...(cacheTtlMs === undefined ? {} : { cacheTtlMs }),
+    });
+  }
+  throw new SportmonksProviderError("invalid_configuration", `Unknown TACTISCOUT_DATA_MODE: ${mode}.`);
 }
 
 export function filterEligiblePlayers(players: PlayerProfile[], input: Pick<Requirements, "position" | "maxAge" | "includeUnknownAge">): PlayerProfile[] {
   return players.filter((player) => {
     if (player.eventDataComplete === false) return false;
-    if (input.position && player.position !== input.position) return false;
+    if (input.position && !positionMatches(player.position, input.position)) return false;
     if (input.maxAge !== undefined) {
       if (player.age === null && !input.includeUnknownAge) return false;
       if (player.age !== null && player.age > input.maxAge) return false;
