@@ -267,6 +267,7 @@ function parseSquadPlayer(
     tackles: stats && coveredTypeIds.has(statisticTypeIds.tackles) ? valueForType(stats, coveredTypeIds, statisticTypeIds.tackles) : 0,
     interceptions: stats && coveredTypeIds.has(statisticTypeIds.interceptions) ? valueForType(stats, coveredTypeIds, statisticTypeIds.interceptions) : 0,
     shotAssists: 0,
+    keyPasses: 0,
   };
   const minutes = stats && coveredTypeIds.has(statisticTypeIds.minutesPlayed)
     ? valueForType(stats, coveredTypeIds, statisticTypeIds.minutesPlayed)

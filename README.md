@@ -31,7 +31,7 @@ TactiScout 是一个 TypeScript 足球球探研究原型。用户用一句自然
 - Fastify：对话案件 HTTP 接口与共享 Zod 请求/响应契约。
 - LangGraph `StateGraph`：共享案件状态、模型决策与数据工具循环、条件路由、`interrupt` 人机交互、证据审核与 checkpoint。外层案件步骤由图控制，阶段内由模型按工具结果决定继续调查、补查、追问或结束。
 - `@langchain/openai`：服务端调用兼容 OpenAI 的模型；密钥不会发送到浏览器。
-- StatsBomb Open Data、本地虚构演示数据，以及可选的 Sportmonks 当前赛季球员数据 adapter。
+- StatsBomb Open Data、本地虚构演示数据，以及可选的 Sportmonks、SkillCorner 和 Wyscout 球员数据 adapter。
 - LanceDB 本地索引、许可登记门控和 Transformers.js multilingual E5 q8 本地 embedding。第一次执行 RAG 检索时会下载量化模型权重并缓存。也可显式切换到兼容 OpenAI 的 embedding 服务；切换前要考虑文档会发送给该服务处理。
 
 招募案件的 LangGraph checkpoint 默认保存在本地 SQLite 文件 `.data/recruitment-cases.sqlite`；可用 `TACTISCOUT_CHECKPOINT_PATH` 改位置。API 进程重启后，已暂停案件可通过原 `caseId` 恢复。浏览器中的对话记录和招募计划/报告快照仍由 `localStorage` 保存；浏览器数据与服务端图执行状态是两类独立数据。同一个案件在单个 API 进程内串行处理，不同案件可以并行。当前 SQLite saver 与进程内互斥适用于本机单进程原型；多进程部署需要共享 checkpoint 后端和跨进程互斥方案。
@@ -45,7 +45,7 @@ pnpm install
 cp .env.example .env
 ```
 
-在 `.env` 设置 `OPENAI_API_KEY`、`OPENAI_MODEL` 和可选的 `OPENAI_BASE_URL`。连接 Ollama 等需要指定推理级别的兼容服务时，可设置 `OPENAI_REASONING_EFFORT`；例如 Qwen 可用 `none` 关闭额外思考输出，缩短工具决策等待。随后分别启动 API 和网页：
+在 `.env` 设置 `OPENAI_API_KEY`、`OPENAI_MODEL` 和可选的 `OPENAI_BASE_URL`。模型单次决策默认最多等待 180 秒，可用 `OPENAI_TIMEOUT_MS` 在 1–600 秒内调整；模型请求不会隐式重试。连接 Ollama 等需要指定推理级别的兼容服务时，可设置 `OPENAI_REASONING_EFFORT`；例如 Qwen 可用 `none` 关闭额外思考输出，缩短工具决策等待。随后分别启动 API 和网页：
 
 ```bash
 pnpm dev
@@ -89,6 +89,25 @@ TACTISCOUT_SPORTMONKS_AI_PROCESSING_ALLOWED=false
 provider 记录保留 Sportmonks 的球员、球队、赛事和赛季 ID，以及取得时间；不同来源 ID 不会按姓名自动合并。单个球员卡会显示数据来源与抓取时间。当前 adapter 只映射进球、助攻、传球、长球、抢断和拦截；不把成功盘带当成带球推进，也不把关键传球当成射门助攻。未覆盖的指标标为暂无数据，不会变成零或参与对应职责的适配计算。[球员统计字段](https://docs.sportmonks.com/v3/definitions/types/statistics/player-statistics)；该 API 不提供 GPS/追踪类距离、冲刺或速度数据。[统计说明](https://docs.sportmonks.com/v3/tutorials-and-guides/tutorials/statistics/players-statistics)。
 
 Sportmonks adapter 的 endpoint 映射和 fixture 测试不依赖在线服务；真实联赛、套餐权限和返回字段仍须使用用户自己的 API token 验证。没有完成该账号联调前，不能把 Sportmonks 模式描述为已验证的真实数据结果。
+
+SkillCorner Open Data 可作为可选的历史指标样例。当前 adapter 只读取本地的 2024/25 澳大利亚 A-League physical、passing 和 off-ball-run aggregate CSV；不会下载数据，也不会把原始球员数据放进仓库。手动取得文件后，放入 `.data/skillcorner-open-data/aggregates/`，文件名须为 `aus1league_physicalaggregates_20242025.csv`、`aus1league_passingaggregates_20242025.csv` 和 `aus1league_obraggregates_20242025.csv`。该目录已由 `.data/` 忽略。
+
+设置 `TACTISCOUT_DATA_MODE=skillcorner` 前，必须分别确认并设置 `TACTISCOUT_SKILLCORNER_LOCAL_STORAGE_ALLOWED=true`、`TACTISCOUT_SKILLCORNER_AI_PROCESSING_ALLOWED=true` 和 `TACTISCOUT_SKILLCORNER_REPORT_DISPLAY_ALLOWED=true`。SkillCorner README 称样例数据由 SkillCorner 与 PySport 开放发布并请求署名，但仓库 MIT 文本没有明确说明这些球员级 CSV、LLM 处理或公开作品集展示的适用范围；相关权限未确认时，三项开关都保持 `false`。当前只读取以下可追溯指标：每 90 分钟高强度跑动/冲刺距离与次数、每 30 分钟持球的身后/套边跑动与穿线传球、向跑动传球成功率。每条报告保留原始字段名、provider ID、位置组、赛事/赛季与样本；缺失数值仍是暂无数据。补充指标只作为原始表现证据，不纳入既有职责评分。SkillCorner CSV 只代表历史 A-League 样例，不是当前完整转会市场或欧洲候选池。[官方数据说明](https://github.com/SkillCorner/opendata/blob/master/README.md) · [仓库许可](https://github.com/SkillCorner/opendata/blob/master/LICENSE) · [官方聚合指标归一化教程](https://github.com/SkillCorner/opendata/blob/master/notebooks/tutorials/01_Getting_Started_with_SkillCorner_Data/DATA_NORMALIZATION_BASICS.md)。
+
+Wyscout Open Data 可作为具名历史事件分析数据源。Pappalardo 与 Massucco 发布的公开样本覆盖 2017/18 五大联赛，以及 2018 世界杯和 2016 欧洲杯；本 adapter 默认只保留 `type=club` 的比赛。数据项在 Figshare 标为 CC BY 4.0。手动从 [Figshare 数据集合集](https://figshare.com/collections/Soccer_match_event_dataset/4415000/5)取得 Players、Events、Teams、Competitions、Matches 项，解压至 `.data/wyscout-open-data/`；目录至少包含 `players.json`、`teams.json`、`competitions.json` 和配对的 `matches_*.json` / `events_*.json`。项目不自动下载原始数据，该目录由 `.data/` 忽略。
+
+配置时使用：
+
+```env
+TACTISCOUT_DATA_MODE=wyscout
+TACTISCOUT_WYSCOUT_DIR=./.data/wyscout-open-data
+TACTISCOUT_WYSCOUT_COMPETITION_IDS=
+TACTISCOUT_WYSCOUT_AI_PROCESSING_ALLOWED=false
+```
+
+按需设置赛事 ID。只有确认配置的模型服务可以处理这些数据后才把 `TACTISCOUT_WYSCOUT_AI_PROCESSING_ALLOWED` 改为 `true`；本机 Ollama 可让原始数据留在本机。候选来源标明 Pappalardo 等人 2019 年数据集与 CC BY 4.0；公开展示派生数据时应附上[论文 DOI](https://doi.org/10.1038/s41597-019-0247-7)、[许可链接](https://creativecommons.org/licenses/by/4.0/)和修改说明。CC BY 不授予隐私或肖像等其他权利。
+
+Wyscout 事件指标映射为：射门事件的标签 101 计进球、标签 301 计助攻、标签 302 计关键传球；传球事件计尝试，标签 1801 计成功传球。旧版数据中的关键传球不是射门助攻，因此射门助攻在此来源中保持不可用。首发球员按 90 分钟、换人按记录分钟近似计算出场分钟；不含补时，也未校正红牌等特殊情况，所以每 90 分钟指标只是近似值。[Wyscout v2 事件与标签定义](https://support.wyscout.com/matches-wyid-events) · [当前 Wyscout 关键传球定义及旧版兼容说明](https://dataglossary.wyscout.com/key_pass/) · [传球与成功标签定义](https://dataglossary.wyscout.com/pass/)。这些记录只代表 2017/18 历史表现，不是现役球员池、当前俱乐部或转会可行性证据。
 
 ## API
 

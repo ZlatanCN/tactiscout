@@ -13,6 +13,11 @@ Labels: wayfinder:map
 - 全 TypeScript；当前技术栈是 React、Fastify 和 LangGraph。
 - 根目录 `CONTEXT.md` 是唯一领域词汇表；重要术语按其中定义使用。
 - [MVP 规格](spec.md) 收录用户故事、接口约定和实现决策；[球探与 Agent 流程研究](research/football-recruitment-and-agent-workflow.md)记录来源与产品推导；[数据源与抓取边界研究](research/football-data-sources-and-crawling.md)记录联网能力、授权路线与数据出处设计；[RAG 实践与足球语料调查](research/scouting-rag-practices-and-sources.md)记录检索实践和可用来源；[LangGraph Agent 与 Harness 调研](research/langgraph-agent-harness-patterns.md)对比官方开源实现与 TactiScout 架构；[许可感知的双语料 RAG 设计](issues/10-permission-aware-rag-design.md)确定产品原则。
+- [补充球员表现数据源调查](research/additional-player-evidence-sources-2026-10.md)比较 SkillCorner、Metrica、Wyscout、StatsBomb 和 football-data.org，记录字段增益、覆盖与数据使用边界。
+- [具名球员表现数据许可与验证路径](research/player-performance-data-licensing-2026-10.md)核对 Wyscout、IDSSE、Metrica、OpenFootball 和 SkillCorner 的一手来源；Wyscout 2017/18 Figshare 数据项标明 CC BY 4.0，适合本机历史数据验证，不代表当前转会市场。
+- [Wyscout 真实数据 smoke test](research/wyscout-real-data-smoke-2026-10.md)记录对官方 Figshare 文件的本机联调结果：默认五大联赛共 2,682 条历史球员赛季记录，真实文件中的嵌套阵容与哨兵字段已由 adapter 覆盖；源文件哈希和出处保存在 Git 忽略目录。
+- [issue 25：Wyscout 历史比赛事件 adapter](issues/25-wyscout-historical-event-adapter.md)代码、来源映射、合成回归夹具及官方 Figshare 五大联赛真实文件 smoke test 均已完成。
+- [issue 26：阻止候选分页重复耗尽调查预算](issues/26-wyscout-agent-cursor-regression.md)已完成：按搜索范围维护候选游标、压缩结论上下文、为 Qwen 请求增加时限；本机 Wyscout/Qwen 最终复验 184.3 秒通过全部 18 项行为检查，结论调用 69.7 秒。
 - 用户已授权继续实现；方向收敛后继续推进，不把项目留在纯计划阶段。
 - 已实现对话案件 HTTP seam、LangGraph 工具决策循环与可中断追问；浏览器已改为自由对话入口，并保存对话和最近完整报告。
 - 已加深结论证据策略与来源许可判定 module；Fastify 应用组合统一注入球员仓库和知识库，工具 trace 使用实际执行参数。详见 [Agent 架构加深](issues/12-agent-architecture-deepening.md)。
@@ -30,11 +35,15 @@ Labels: wayfinder:map
 - [调查阶段反馈与有依据的追问](issues/16-progress-and-grounded-clarifications.md)已完成：长时间运行时显示 LangGraph 当前阶段、决策步数和耗时；参考球员无本地记录时，不再要求用户确认身份或未提出的联赛/赛季范围，并禁止依据模型记忆断言现役俱乐部/联赛。
 - [LangGraph Agent 与 Harness 调研](research/langgraph-agent-harness-patterns.md)现包含 Deep Agents、Open Deep Research、Exa、Lyft、Kensho、AppFolio、Open SWE 及两个足球项目的公开做法；共同模式是外层显式编排、窄职责分支、结构化交接和轨迹评估，不追求 Agent 数量。
 - [招募案件 checkpoint 跨重启恢复](issues/13-durable-case-checkpoints.md)完成：LangGraph 内部案件状态默认存本机 `.data/recruitment-cases.sqlite`，可用 `TACTISCOUT_CHECKPOINT_PATH` 改路径；追问暂停后 API 重启可由同一案件编号恢复。计划与可见历史仍在浏览器 `localStorage`。
-- [LangGraph harness 行为评估套件](issues/14-agent-harness-evaluation-suite.md)现支持具名场景、重复运行、轨迹隐私净化、候选 ID 顺序校验和 Ollama 全场景检查；实际模型失败暴露了追问后位置约束丢失，见后续 issue 15。
+- [LangGraph harness 行为评估套件](issues/14-agent-harness-evaluation-suite.md)现支持具名场景、重复运行、轨迹隐私净化、候选 ID 顺序校验和 Ollama 全场景检查。2026-10-04 真实 Qwen 回归发现并修复了“确认位置无候选后模型重复翻页/追问”：现在先征求是否放宽，拒绝后如实结束；同次两场景复跑均通过。单次场景通过不是推荐准确率证明。
 - 使用 `.scratch/<feature>/` 保存地图、规格和单独的问题文件；本地 triage 标签沿用项目默认值。
 
-## Decisions so far
+## Decisions-so-far
 
+- [防止候选分页耗尽 Agent 调查预算](issues/26-wyscout-agent-cursor-regression.md)：按搜索范围维护候选游标和评估去重；最终结论采用短提示与证据压缩历史，单次模型请求有界。真实 Wyscout/Qwen 单次验证通过，未验证候选排序准确率。
+
+- [具名球员表现数据许可与验证路径](research/player-performance-data-licensing-2026-10.md)：以 Wyscout CC BY 4.0 历史比赛数据作为潜在的具名事件分析验证源；原始数据留在本机、保留署名并使用 Ollama。数据许可不授予隐私/肖像权，旧赛季不得用于当前引援事实。当前球员池仍需另一个经过账户与模型处理许可确认的实时 provider。
+- [Wyscout 历史比赛事件 adapter](issues/25-wyscout-historical-event-adapter.md)：把 Wyscout 定为具名历史表现验证源；事件计数由程序确定性聚合，LangGraph 负责调查工具编排与追问，本机模型解释带来源的证据。只有授权当前赛季 provider 能形成当前球员池。
 - [具名球员报告语料调查](issues/21-open-player-report-corpus.md)：没有找到明确允许自动获取、持久保存、AI/RAG 处理与面向用户展示的真实球员报告语料；近期优先做 TactiScout 自有授权观察记录，合成数据只作清楚标注的评测夹具。
 - [来源撤权和索引清除](issues/22-revoke-and-purge-knowledge-source.md)：检索时重读来源登记、预过滤无权语料，并允许删除当前 LanceDB 表版本中的来源片段。旧数据集版本的物理清理需停止所有访问进程后单独维护。
 - [使用全 TypeScript 和 LangGraph 组织球探流程](issues/01-typescript-langgraph.md)：继续现有 React、Fastify、LangGraph 架构。
@@ -58,13 +67,15 @@ Labels: wayfinder:map
 - [寻找可入库的具名球员报告语料](issues/21-open-player-report-corpus.md)：以一手来源验证球探报告的自动访问、持久化、AI/RAG 和展示权，选定可用来源或记录无可验证授权的结论。
 - [撤销知识来源并清除索引](issues/22-revoke-and-purge-knowledge-source.md)：运行中读取最新来源许可、检索前过滤失效语料，并显式删除某来源在当前本地索引版本中的片段。
 - [第一方球探观察记录](issues/23-first-party-player-observations.md)：在本机维护具名比赛观察，以分开的逐条许可控制保存和 Agent 检索；定性观察保留作者与来源，不能直接变成球员能力分。
+- [来源特定的可追溯表现指标](issues/24-supplementary-performance-evidence.md)：研究 SkillCorner 2024/25 A-League 赛季聚合，并准备以来源身份、指标定义、单位和样本覆盖承载额外表现指标；真实球员级数据本地保存与模型处理各自 opt-in，许可未核实前不入仓或公开。
+- Wyscout adapter 已按官方 v2 事件文档区分 301 助攻与 302 关键传球；302 不再冒充射门助攻。官方 Figshare 真实数据已本机验证：2,682 条跨五大联赛历史记录均有对应事件文件，关键传球可用、射门助攻不可用。样本分钟由首发/换人记录估算，报告说明不含补时且未校正红牌；原始数据和 SHA-256 provenance 留在 Git 忽略的 `.data/`。
 - 首个可选当前球员数据 provider 选择 Sportmonks，但仅在显式配置时启用；保留 StatsBomb 和演示数据作为独立来源，不合并跨 provider 的球员 ID。模型处理许可尚未从 provider 条款中确认，故 Sportmonks 数据经模型处理默认为关闭。
 
-## Not yet specified
+## Fog
 
 - 如何按实际可用语料整理 RAG/Agent 标注样本、阈值和候选排序的可信评估；缺少球探标注时不宣称客观排序准确率。
 - 当前来源发现只覆盖 PLOS 学术文章；通用网页搜索 provider、最终 embedding 模型和 RAG/Agent 评测阈值仍待验证。
-- 选择哪家授权数据源、取得哪些赛事覆盖，以及线上缓存/展示/AI 使用的合同范围。
+- 当前球员池的授权数据源、目标联赛覆盖，以及线上缓存/展示/外部 AI 使用范围。Sportmonks 凭据目前未配置；Wyscout 2017/18 公开数据只能支持历史表现分析验证。
 
 ## Out of scope
 

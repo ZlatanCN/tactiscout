@@ -41,6 +41,9 @@ export const dataRepository = repository;
 export function createScoutRunner(repo: PlayerRepository): (input: ScoutInput) => Promise<ScoutResponse> {
   const workflow = createWorkflow(repo);
   return async (input) => {
+    if (repo.mode === "skillcorner" || repo.mode === "wyscout") {
+      throw new Error(`${repo.sourceName} 只用于对话式证据调查；旧版一次性接口不会生成相应的来源限制与历史时间说明。`);
+    }
     const result = await workflow.invoke({ input: ScoutInputSchema.parse(input) });
     if (!result.report) throw new Error("Report node did not produce an output.");
     return ScoutResponseSchema.parse(result.report);

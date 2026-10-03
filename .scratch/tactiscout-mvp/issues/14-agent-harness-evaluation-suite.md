@@ -50,3 +50,15 @@ Labels: ready-for-human
 全量运行未通过是 Agent 当前行为的真实反例，并非评估器误把排序或空报告语料当作质量标签。已把“追问确认的角色约束必须进入持久案件状态并约束续跑”登记为 [issue 15](15-preserve-clarified-role-constraints.md)。本次运行只说明该缺陷可复现；不宣称模型可靠或推荐正确。
 
 验证结果：`pnpm test` 71/71 通过；`pnpm build`、`pnpm build:web` 和 `git diff --check` 通过。
+
+## Comments
+
+### 2026-10-04 — 空位置结果后的真实模型回归
+
+本机 `qwen3.5:9b` 复跑发现，拜仁场景在用户确认中锋后得到 0 个候选，LangGraph 仍把下一步交给模型；模型再次以 `offset: 10` 查询空结果并重复提出不合适的问题，最终触发策略循环保护。根因是已记录的 `confirmedPositionSearchMatchCount === 0` 没有对应的确定性分支。
+
+已修复：空结果现在先询问是否扩大位置范围；用户保留原位置时直接完成并如实说明无样本；用户同意扩大到其他前锋位置时，`ATT` 位置族约束会覆盖检索、评估、证据审核与推荐。拒绝扩大位置的回答不再被解析成同意扩大。
+
+快速回归：新增同案追问测试覆盖询问、拒绝后结束，以及扩大至其他前锋位置并推荐匹配位置族球员。`node --import tsx --test tests/*.test.ts` 104/104 通过；API 和网页 TypeScript 检查、网页生产构建通过。
+
+修复后的本机 Ollama 全量运行：`barcelona-under-23-midfielder` 61.7 秒，全部硬性检查通过；`bayern-kane-replacement` 32.0 秒，全部硬性检查通过，角色确认后中锋搜索从 offset 0 返回空，再停在清晰的范围选择问题。每场景一次只验证本次运行的行为，不证明长期稳定性、推荐准确率或真实球员数据质量。

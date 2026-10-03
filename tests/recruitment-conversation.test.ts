@@ -4,6 +4,7 @@ import { createApp } from "../src/app.js";
 import {
   createRecruitmentConversation,
   RecruitmentCaseStateExpiredError,
+  RecruitmentModelTimeoutError,
   unavailableRecruitmentConversation,
   type RecruitmentAction,
   type RecruitmentConversation,
@@ -102,6 +103,27 @@ test("the HTTP interface clearly reports when no model service is configured", a
 
     assert.equal(response.statusCode, 503);
     assert.match(response.json().error, /尚未配置模型服务/);
+  } finally {
+    await app.close();
+  }
+});
+
+test("the HTTP interface reports a bounded model wait as a gateway timeout", async () => {
+  const app = createApp({
+    recruitmentConversation: {
+      async turn() { throw new RecruitmentModelTimeoutError(180_000); },
+    },
+  });
+
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/recruitment/cases/model-timeout/turns",
+      payload: { message: "为巴萨找一名中场" },
+    });
+
+    assert.equal(response.statusCode, 504);
+    assert.match(response.json().error, /超过 180 秒/);
   } finally {
     await app.close();
   }
@@ -265,7 +287,7 @@ test("a recruitment case investigates, pauses for a material choice, resumes, an
     assert.deepEqual(body.report.evidenceCoverage, {
       evaluatedCandidateCount: 2,
       availableMetricValues: 16,
-      expectedMetricValues: 16,
+      expectedMetricValues: 18,
       lowSampleCandidates: 0,
       limitedPeerGroupCandidates: 2,
     });
@@ -436,6 +458,7 @@ test("the optional trace records action timing and actual tool scopes without mo
     minimumMinutes: 0,
     competition: null,
     season: null,
+    requestedOffset: 0,
     offset: 0,
     limit: 5,
     playerNameFilterUsed: false,
@@ -451,6 +474,183 @@ test("the optional trace records action timing and actual tool scopes without mo
     evaluatedPlayerIds: [player.playerId],
   });
   assert.ok(events.every((event) => !("reasoning" in event) && !("content" in event)));
+});
+
+test("repeating a candidate search continues at the next page and traces requested and effective offsets", async () => {
+  const first = roleConstraintPlayer("cursor-first", "Cursor First", "CM");
+  const second = roleConstraintPlayer("cursor-second", "Cursor Second", "CM");
+  const otherPosition = roleConstraintPlayer("cursor-defender", "Cursor Defender", "DEF");
+  const search = {
+    action: "search_candidates" as const,
+    position: "CM" as const,
+    maxAge: 23,
+    minimumMinutes: 0,
+    competition: null,
+    season: null,
+    offset: 0,
+    limit: 1,
+  };
+  const actions: RecruitmentAction[] = [
+    { action: "search_methodology", query: "中场能力评估方法" },
+    search,
+    search,
+    { ...search, position: "DEF", offset: 1 },
+    { action: "evaluate_candidates", playerIds: [otherPosition.playerId] },
+    { action: "search_player_reports", query: "Cursor Defender 球员报告", playerNames: [otherPosition.name] },
+    {
+      action: "finish",
+      targetTeam: "Barcelona",
+      needSummary: "为巴萨比较后卫候选人的比赛证据。",
+      capabilityProfile: ["后卫比赛表现"],
+      recommendations: [{ playerId: otherPosition.playerId, evidenceKeys: ["goals"] }],
+      limitationKeys: [],
+    },
+  ];
+  const events: RecruitmentTraceEvent[] = [];
+  const candidatePagesSeenByPlanner: string[][] = [];
+  const conversation = createRecruitmentConversation({
+    repository: { mode: "wyscout", sourceName: "Wyscout Open Data", async loadPlayers() { return [first, second, otherPosition]; } },
+    planner: {
+      async decide({ history, decisionMode }) {
+        if (decisionMode !== "conclude") candidatePagesSeenByPlanner.splice(0, candidatePagesSeenByPlanner.length, ...history
+          .filter((entry) => entry.role === "tool" && entry.toolName === "search_candidates")
+          .map((entry) => JSON.parse(entry.content) as { candidates: Array<{ playerId: string }> })
+          .map((page) => page.candidates.map((candidate) => candidate.playerId)));
+        const action = actions.shift();
+        assert.ok(action, "the investigation should reach evidence evaluation and a report");
+        return action;
+      },
+    },
+    knowledgeBase: { async search() { return []; } },
+    observer: (event) => { events.push(event); },
+  });
+
+  const response = await conversation.turn({ threadId: "candidate-cursor-public-seam", message: "为巴萨找一名 23 岁以下球员" });
+
+  assert.equal(response.status, "completed");
+  assert.deepEqual(candidatePagesSeenByPlanner, [[first.playerId], [second.playerId], [otherPosition.playerId]]);
+  const searches = events.filter((event) => event.phase === "tool" && event.toolName === "search_candidates");
+  assert.deepEqual(searches.map((event) => event.phase === "tool" ? event.filters.offset : null), [0, 1, 0]);
+  assert.deepEqual(searches.map((event) => event.phase === "tool" ? event.filters.requestedOffset : null), [0, 0, 1]);
+  assert.equal(response.report?.evidenceCoverage.evaluatedCandidateCount, 1);
+  assert.equal(response.report?.recommendations[0]?.player.playerId, otherPosition.playerId);
+});
+
+test("candidate-search budget feedback directs the Agent to evaluate discovered candidates", async () => {
+  const players = Array.from({ length: 5 }, (_, index) =>
+    roleConstraintPlayer(`budget-player-${index}`, `Budget Player ${index}`, "CM"),
+  );
+  const searchAction: RecruitmentAction = {
+    action: "search_candidates",
+    position: "CM",
+    maxAge: 23,
+    minimumMinutes: 0,
+    competition: null,
+    season: null,
+    offset: 0,
+    limit: 1,
+  };
+  const events: RecruitmentTraceEvent[] = [];
+  let searchDecisions = 0;
+  const policyFeedbackMessages: string[] = [];
+  const conversation = createRecruitmentConversation({
+    repository: { mode: "wyscout", sourceName: "Wyscout Open Data", async loadPlayers() { return players; } },
+    planner: {
+      async decide({ history }) {
+        const lastTool = history.at(-1);
+        if (lastTool?.role === "tool" && lastTool.toolName === "investigation_policy") {
+          policyFeedbackMessages.push(lastTool.content);
+          return { action: "evaluate_candidates", playerIds: [players[0]!.playerId] };
+        }
+        if (lastTool?.role === "tool" && lastTool.toolName === "evaluate_candidates") {
+          return { action: "search_player_reports", query: "年轻中场球员报告", playerNames: [players[0]!.name] };
+        }
+        if (lastTool?.role === "tool" && lastTool.toolName === "search_player_reports") {
+          return {
+            action: "finish",
+            targetTeam: "Barcelona",
+            needSummary: "已评估当前找到的年轻中场样本。",
+            capabilityProfile: ["中场比赛表现"],
+            recommendations: [{ playerId: players[0]!.playerId, evidenceKeys: ["goals"] }],
+            limitationKeys: [],
+          };
+        }
+        if (lastTool?.role === "tool" && (lastTool.toolName === "search_methodology" || lastTool.toolName === "search_candidates")) {
+          searchDecisions += 1;
+          assert.ok(searchDecisions <= 5);
+          return searchAction;
+        }
+        return { action: "search_methodology", query: "中场比赛表现评估方法" };
+      },
+    },
+    knowledgeBase: { async search() { return []; } },
+    observer: (event) => { events.push(event); },
+  });
+
+  const response = await conversation.turn({ threadId: "candidate-budget-feedback", message: "为巴萨找 23 岁以下中场" });
+
+  assert.equal(response.status, "completed");
+  const candidateBudgetFeedback = policyFeedbackMessages.find((message) => /候选发现已达到本轮上限/.test(message));
+  assert.ok(candidateBudgetFeedback, `missing candidate-budget feedback: ${JSON.stringify(policyFeedbackMessages)}`);
+  assert.match(candidateBudgetFeedback, /evaluate_candidates/);
+  assert.match(candidateBudgetFeedback, /不要在未评估任何人的情况下 finish/);
+  assert.equal(searchDecisions, 5, "the fifth candidate search is blocked after four tool calls");
+  assert.equal(events.filter((event) => event.phase === "tool" && event.toolName === "search_candidates").length, 4);
+  assert.equal(events.filter((event) => event.phase === "tool" && event.toolName === "evaluate_candidates").length, 1);
+  assert.equal(response.report?.evidenceCoverage.evaluatedCandidateCount, 1);
+});
+
+test("re-evaluating a candidate already measured redirects the Agent to player-report search", async () => {
+  const player = roleConstraintPlayer("already-evaluated", "Already Evaluated", "CM");
+  const events: RecruitmentTraceEvent[] = [];
+  let evaluationToolResponses = 0;
+  let evaluationFeedback = "";
+  const conversation = createRecruitmentConversation({
+    repository: { mode: "wyscout", sourceName: "Wyscout Open Data", async loadPlayers() { return [player]; } },
+    planner: {
+      async decide({ history }) {
+        const lastTool = history.at(-1);
+        if (lastTool?.role === "tool" && lastTool.toolName === "investigation_policy") {
+          evaluationFeedback = lastTool.content;
+          return { action: "search_player_reports", query: "Already Evaluated 球员报告", playerNames: [player.name] };
+        }
+        if (lastTool?.role === "tool" && lastTool.toolName === "search_methodology") {
+          return { action: "search_candidates", position: "CM", maxAge: 23, minimumMinutes: 0, limit: 10 };
+        }
+        if (lastTool?.role === "tool" && lastTool.toolName === "search_candidates") {
+          return { action: "evaluate_candidates", playerIds: [player.playerId] };
+        }
+        if (lastTool?.role === "tool" && lastTool.toolName === "evaluate_candidates") {
+          evaluationToolResponses += 1;
+          return evaluationToolResponses === 1
+            ? { action: "evaluate_candidates", playerIds: [player.playerId] }
+            : { action: "search_player_reports", query: "Already Evaluated 球员报告", playerNames: [player.name] };
+        }
+        if (lastTool?.role === "tool" && lastTool.toolName === "search_player_reports") {
+          return {
+            action: "finish",
+            targetTeam: "Barcelona",
+            needSummary: "基于已有的比赛证据完成候选评估。",
+            capabilityProfile: ["中场比赛表现"],
+            recommendations: [{ playerId: player.playerId, evidenceKeys: ["goals"] }],
+            limitationKeys: [],
+          };
+        }
+        return { action: "search_methodology", query: "中场比赛表现评估方法" };
+      },
+    },
+    knowledgeBase: { async search() { return []; } },
+    observer: (event) => { events.push(event); },
+  });
+
+  const response = await conversation.turn({ threadId: "duplicate-evaluation-guard", message: "为巴萨找一名 23 岁以下中场" });
+
+  assert.equal(response.status, "completed");
+  assert.match(evaluationFeedback, /已经完成比赛表现评估/);
+  assert.match(evaluationFeedback, /search_player_reports/);
+  assert.equal(events.filter((event) => event.phase === "tool" && event.toolName === "evaluate_candidates").length, 1);
+  assert.equal(events.filter((event) => event.phase === "tool" && event.toolName === "search_player_reports").length, 1);
+  assert.equal(response.report?.evidenceCoverage.evaluatedCandidateCount, 1);
 });
 
 test("candidate search traces indicate name filtering without exposing the searched player's name", async () => {
@@ -576,6 +776,7 @@ test("player report search covers every evaluated candidate even when the action
     { action: "finish", targetTeam: "Barcelona", needSummary: "完成。", capabilityProfile: [], recommendations: [], limitationKeys: [] },
   ];
   let actualReportNames: string[] = [];
+  let conclusionHistory: Parameters<RecruitmentPlanner["decide"]>[0]["history"] = [];
   const decisionModes: Array<"investigate" | "conclude" | undefined> = [];
   let conclusionConstraints: Parameters<RecruitmentPlanner["decide"]>[0]["constraints"];
   const events: RecruitmentTraceEvent[] = [];
@@ -584,7 +785,10 @@ test("player report search covers every evaluated candidate even when the action
     planner: {
       async decide(input) {
         decisionModes.push(input.decisionMode);
-        if (input.decisionMode === "conclude") conclusionConstraints = input.constraints;
+        if (input.decisionMode === "conclude") {
+          conclusionConstraints = input.constraints;
+          conclusionHistory = input.history;
+        }
         const action = actions.shift();
         assert.ok(action);
         return action;
@@ -604,6 +808,18 @@ test("player report search covers every evaluated candidate even when the action
   assert.equal(response.status, "completed");
   assert.deepEqual(actualReportNames, players.map((player) => player.name));
   assert.equal(decisionModes.at(-1), "conclude");
+  const compactedCandidateSearch = conclusionHistory.find(({ role, toolName }) =>
+    role === "tool" && toolName === "search_candidates",
+  );
+  assert.ok(compactedCandidateSearch);
+  const compactedSearchResult = JSON.parse(compactedCandidateSearch.content) as {
+    evaluatedCandidates: Array<Record<string, unknown>>;
+    nextOffset: number | null;
+  };
+  assert.equal(compactedSearchResult.evaluatedCandidates[0]?.name, players[0]?.name);
+  assert.equal(compactedSearchResult.evaluatedCandidates[0]?.team, undefined, "conclusion context omits redundant search-page metadata");
+  assert.ok(conclusionHistory.some(({ role, toolName }) => role === "tool" && toolName === "evaluate_candidates"));
+  assert.ok(conclusionHistory.some(({ role, toolName }) => role === "tool" && toolName === "search_player_reports"));
   assert.equal(conclusionConstraints?.targetTeam, "巴萨");
   assert.deepEqual(conclusionConstraints?.evaluatedCandidates.map(({ playerId }) => playerId), players.map((player) => player.playerId));
   assert.ok(conclusionConstraints?.evaluatedCandidates.every(({ evidenceKeys }) => evidenceKeys.length === 8));
@@ -699,7 +915,7 @@ test("missing event coverage and zero pass attempts are reported as unavailable 
 
   assert.deepEqual(incompleteResult.evaluations, []);
   assert.equal(incompleteResult.response.report?.evidenceCoverage.availableMetricValues, 0);
-  assert.equal(incompleteResult.response.report?.evidenceCoverage.expectedMetricValues, 8);
+  assert.equal(incompleteResult.response.report?.evidenceCoverage.expectedMetricValues, 9);
   assert.ok(incompleteResult.response.report?.limitations.some((item) => /缺少一场或多场比赛的事件文件/.test(item)));
   assert.equal(noPassesResult.evaluations.length, 7);
   assert.ok(!noPassesResult.evaluations.some((item) => (item as { key?: string }).key === "passCompletionPct"));
@@ -904,22 +1120,6 @@ test("an empty confirmed-role search never falls back to previously discovered p
       reason: "具体位置会改变候选名单。",
     },
     { action: "search_candidates", position: "CB", minimumMinutes: 0, limit: 10 },
-    {
-      action: "finish",
-      targetTeam: null,
-      needSummary: "找到中后卫。",
-      capabilityProfile: ["后场防守"],
-      recommendations: [{ playerId: centerBack.playerId, evidenceKeys: ["tacklesInterceptions"] }],
-      limitationKeys: [],
-    },
-    {
-      action: "finish",
-      targetTeam: null,
-      needSummary: "报告中锋位置的数据覆盖。",
-      capabilityProfile: ["中锋表现"],
-      recommendations: [],
-      limitationKeys: [],
-    },
   ];
   const candidateSearches: RecruitmentTraceEvent[] = [];
   const conversation = createRecruitmentConversation({
@@ -947,5 +1147,107 @@ test("an empty confirmed-role search never falls back to previously discovered p
   assert.ok(resumedTurn.report?.limitations.some((item) => /用户确认的位置（中锋）完成候选检索后，没有找到/.test(item)));
   assert.deepEqual(candidateSearches.map((event) => event.phase === "tool" ? event.filters.position : null), [null, "ST"]);
   assert.equal(candidateSearches[1]?.phase === "tool" ? candidateSearches[1].matchingRecordCount : null, 0);
+  assert.equal(actions.length, 0);
+});
+
+test("an empty confirmed-role search asks whether to broaden before asking the model for another action", async () => {
+  const centerBack = roleConstraintPlayer("replacement-empty-st-cb", "Mika Stone", "CB");
+  const actions: RecruitmentAction[] = [
+    { action: "search_methodology", query: "中锋位置的表现评估方法" },
+    { action: "search_candidates", position: null, minimumMinutes: 0, limit: 10 },
+    { action: "search_candidates", position: "ST", minimumMinutes: 0, limit: 10 },
+  ];
+  const candidateSearches: Extract<RecruitmentTraceEvent, { phase: "tool" }>[] = [];
+  let plannerCalls = 0;
+  const conversation = createRecruitmentConversation({
+    repository: { mode: "demo", sourceName: "Demo", async loadPlayers() { return [centerBack]; } },
+    planner: {
+      async decide() {
+        plannerCalls += 1;
+        const action = actions.shift();
+        assert.ok(action, "an empty confirmed-role result should be handled without another model action");
+        return action;
+      },
+    },
+    knowledgeBase: { async search() { return []; } },
+    observer(event) {
+      if (event.phase === "tool" && event.toolName === "search_candidates") candidateSearches.push(event);
+    },
+  });
+  const threadId = "replacement-empty-confirmed-role";
+
+  const firstTurn = await conversation.turn({ threadId, message: "为拜仁寻找凯恩的替代者" });
+  assert.equal(firstTurn.status, "needs_input");
+
+  const resumedTurn = await conversation.turn({ threadId, message: "按中锋职责，优先未来接班。" });
+
+  assert.equal(resumedTurn.status, "needs_input");
+  assert.match(resumedTurn.message, /没有找到符合中锋.*候选/);
+  assert.match(resumedTurn.message, /扩大到其他位置/);
+  assert.equal(plannerCalls, 3);
+  assert.deepEqual(candidateSearches.map(({ filters }) => filters.position), [null, "ST"]);
+  assert.equal(candidateSearches.at(-1)?.matchingRecordCount, 0);
+  const keptRoleTurn = await conversation.turn({ threadId, message: "保留中锋范围并先结束本轮。" });
+  assert.equal(keptRoleTurn.status, "completed");
+  assert.deepEqual(keptRoleTurn.report?.recommendations, []);
+  assert.ok(keptRoleTurn.report?.limitations.some((item) => /按用户确认的位置（中锋）完成候选检索后，没有找到/.test(item)));
+  assert.equal(plannerCalls, 3, "the confirmed empty result and user's choice are handled without more model calls");
+  assert.equal(actions.length, 0);
+});
+
+test("broadening an empty striker search to other forward positions keeps the position-family constraint", async () => {
+  const winger = roleConstraintPlayer("replacement-empty-st-rw", "Jonas Vale", "RW");
+  const centerBack = roleConstraintPlayer("replacement-empty-st-cb-family", "Mika Stone", "CB");
+  const actions: RecruitmentAction[] = [
+    { action: "search_methodology", query: "凯恩接班人的可观察能力维度" },
+    { action: "search_candidates", position: null, minimumMinutes: 0, limit: 10 },
+    { action: "search_candidates", position: "ST", minimumMinutes: 0, limit: 10 },
+    { action: "search_candidates", position: "ATT", minimumMinutes: 0, limit: 10 },
+    { action: "evaluate_candidates", playerIds: [winger.playerId] },
+    { action: "search_player_reports", query: "Jonas Vale 球员报告", playerNames: [winger.name] },
+    {
+      action: "finish",
+      targetTeam: null,
+      needSummary: "按用户同意扩大的前锋位置范围完成比较。",
+      capabilityProfile: ["前锋表现"],
+      recommendations: [{ playerId: winger.playerId, evidenceKeys: ["goals"] }],
+      limitationKeys: [],
+    },
+  ];
+  const candidateSearches: Extract<RecruitmentTraceEvent, { phase: "tool" }>[] = [];
+  const evaluationEvents: Extract<RecruitmentTraceEvent, { phase: "tool" }>[] = [];
+  let plannerCalls = 0;
+  const conversation = createRecruitmentConversation({
+    repository: { mode: "demo", sourceName: "Demo", async loadPlayers() { return [centerBack, winger]; } },
+    planner: {
+      async decide(input) {
+        plannerCalls += 1;
+        const action = actions.shift();
+        assert.ok(action, `missing planner action ${plannerCalls}: ${JSON.stringify({ confirmedPosition: input.confirmedPosition, lastTool: input.history.at(-1)?.toolName })}`);
+        return action;
+      },
+    },
+    knowledgeBase: { async search() { return []; } },
+    observer(event) {
+      if (event.phase === "tool" && event.toolName === "search_candidates") candidateSearches.push(event);
+      if (event.phase === "tool" && event.toolName === "evaluate_candidates") evaluationEvents.push(event);
+    },
+  });
+  const threadId = "replacement-empty-st-broaden-forward-family";
+
+  const firstTurn = await conversation.turn({ threadId, message: "为拜仁寻找凯恩的替代者" });
+  assert.equal(firstTurn.status, "needs_input");
+  const roleTurn = await conversation.turn({ threadId, message: "按中锋职责，优先未来接班。" });
+  assert.equal(roleTurn.status, "needs_input");
+  assert.match(roleTurn.message, /扩大到其他位置/);
+  const broadenedTurn = await conversation.turn({ threadId, message: "扩大到其他前锋位置继续找。" });
+
+  assert.equal(broadenedTurn.status, "completed");
+  assert.equal(broadenedTurn.report?.targetTeam, "拜仁");
+  assert.deepEqual(candidateSearches.map(({ filters }) => filters.position), [null, "ST", "ATT"]);
+  assert.deepEqual(candidateSearches.at(-1)?.filters.candidateIds, [winger.playerId]);
+  assert.deepEqual(evaluationEvents.at(-1)?.filters.evaluatedPlayerIds, [winger.playerId]);
+  assert.deepEqual(broadenedTurn.report?.recommendations.map(({ player }) => player.playerId), [winger.playerId]);
+  assert.ok(broadenedTurn.report?.recommendations.every(({ player }) => player.position === "RW"));
   assert.equal(actions.length, 0);
 });

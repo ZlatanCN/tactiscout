@@ -3,7 +3,7 @@ import { z } from "zod/v4";
 export const PositionSchema = z.enum(["GK", "DEF", "CB", "LB", "RB", "LWB", "RWB", "MID", "DM", "CM", "AM", "ATT", "LW", "RW", "ST"]);
 export type Position = z.infer<typeof PositionSchema>;
 
-export const DatasetModeSchema = z.enum(["demo", "statsbomb", "sportmonks"]);
+export const DatasetModeSchema = z.enum(["demo", "statsbomb", "sportmonks", "skillcorner", "wyscout"]);
 export type DatasetMode = z.infer<typeof DatasetModeSchema>;
 
 export const InPossessionRoleSchema = z.enum(["progression", "retention", "creation"]);
@@ -74,6 +74,7 @@ export const RawStatsSchema = z.object({
   tackles: z.number().default(0),
   interceptions: z.number().default(0),
   shotAssists: z.number().default(0),
+  keyPasses: z.number().default(0),
 });
 
 export const RawStatKeySchema = z.enum([
@@ -87,6 +88,7 @@ export const RawStatKeySchema = z.enum([
   "tackles",
   "interceptions",
   "shotAssists",
+  "keyPasses",
 ]);
 export type RawStatKey = z.infer<typeof RawStatKeySchema>;
 
@@ -96,10 +98,37 @@ export const PlayerDataSourceIdentitySchema = z.object({
   teamId: z.string().optional(),
   competitionId: z.string().optional(),
   seasonId: z.string().optional(),
+  positionGroup: z.string().optional(),
   retrievedAt: z.string().datetime(),
   isCurrentSeason: z.boolean().optional(),
 });
 export type PlayerDataSourceIdentity = z.infer<typeof PlayerDataSourceIdentitySchema>;
+
+export const SupplementaryMetricKeySchema = z.enum([
+  "highIntensityDistancePer90",
+  "sprintDistancePer90",
+  "highIntensityActionsPer90",
+  "behindRunsPer30Tip",
+  "overlapRunsPer30Tip",
+  "lineBreakPassesCompletedPer30Tip",
+  "passesToRunsCompletionPct",
+]);
+export type SupplementaryMetricKey = z.infer<typeof SupplementaryMetricKeySchema>;
+
+export const SupplementaryMetricNormalizationSchema = z.enum(["per90", "per30Tip", "percentage"]);
+export type SupplementaryMetricNormalization = z.infer<typeof SupplementaryMetricNormalizationSchema>;
+
+export const SupplementaryPerformanceMetricSchema = z.object({
+  key: SupplementaryMetricKeySchema,
+  definition: z.string().min(1),
+  value: z.number().nullable(),
+  unit: z.string(),
+  normalization: SupplementaryMetricNormalizationSchema,
+  sourceField: z.string().min(1),
+  sampleMinutes: z.number().nonnegative().nullable(),
+  sampleMatches: z.number().int().nonnegative().nullable(),
+});
+export type SupplementaryPerformanceMetric = z.infer<typeof SupplementaryPerformanceMetricSchema>;
 
 export const PlayerProfileSchema = z.object({
   playerId: z.string(),
@@ -116,6 +145,7 @@ export const PlayerProfileSchema = z.object({
   stats: RawStatsSchema,
   sourceIdentity: PlayerDataSourceIdentitySchema.optional(),
   availableStats: z.array(RawStatKeySchema).optional(),
+  supplementaryMetrics: z.array(SupplementaryPerformanceMetricSchema).optional(),
   eventDataComplete: z.boolean().optional(),
   source: z.string(),
 });
@@ -131,6 +161,7 @@ export const Per90Schema = z.object({
   pressures: z.number().nullable(),
   tacklesInterceptions: z.number().nullable(),
   shotAssists: z.number().nullable(),
+  keyPasses: z.number().nullable(),
 });
 export type Per90 = z.infer<typeof Per90Schema>;
 
@@ -191,11 +222,13 @@ export const CapabilityMetricKeySchema = z.enum([
   "goals",
   "assists",
   "shotAssists",
+  "keyPasses",
   "carries",
   "longPasses",
   "passCompletionPct",
   "pressures",
   "tacklesInterceptions",
+  ...SupplementaryMetricKeySchema.options,
 ]);
 export type CapabilityMetricKey = z.infer<typeof CapabilityMetricKeySchema>;
 
@@ -203,12 +236,23 @@ export const CapabilityMetricDefinitions = [
   { key: "goals", label: "进球", unit: "次/90" },
   { key: "assists", label: "助攻", unit: "次/90" },
   { key: "shotAssists", label: "射门助攻", unit: "次/90" },
+  { key: "keyPasses", label: "关键传球", unit: "次/90" },
   { key: "carries", label: "带球", unit: "次/90" },
   { key: "longPasses", label: "长传", unit: "次/90" },
   { key: "passCompletionPct", label: "传球成功率", unit: "%" },
   { key: "pressures", label: "施压", unit: "次/90" },
   { key: "tacklesInterceptions", label: "抢断与拦截", unit: "次/90" },
 ] as const satisfies readonly { key: CapabilityMetricKey; label: string; unit: string }[];
+
+export const SupplementaryCapabilityMetricDefinitions = [
+  { key: "highIntensityDistancePer90", label: "高强度跑动距离", definition: "来源全场高强度跑动距离按样本分钟归一到每 90 分钟。", unit: "米/90分钟", normalization: "per90" },
+  { key: "sprintDistancePer90", label: "冲刺距离", definition: "来源全场冲刺距离按样本分钟归一到每 90 分钟。", unit: "米/90分钟", normalization: "per90" },
+  { key: "highIntensityActionsPer90", label: "高强度跑动次数", definition: "来源全场高强度跑动次数按样本分钟归一到每 90 分钟。", unit: "次/90分钟", normalization: "per90" },
+  { key: "behindRunsPer30Tip", label: "身后跑动", definition: "来源统计的身后无球跑动次数，按每 30 分钟球队持球时间标准化。", unit: "次/30分钟持球", normalization: "per30Tip" },
+  { key: "overlapRunsPer30Tip", label: "套边跑动", definition: "来源统计的套边无球跑动次数，按每 30 分钟球队持球时间标准化。", unit: "次/30分钟持球", normalization: "per30Tip" },
+  { key: "lineBreakPassesCompletedPer30Tip", label: "完成的穿线传球", definition: "来源统计的完成穿线传球次数，按每 30 分钟球队持球时间标准化。", unit: "次/30分钟持球", normalization: "per30Tip" },
+  { key: "passesToRunsCompletionPct", label: "向跑动传球成功率", definition: "来源统计的向跑动传球完成率。", unit: "%", normalization: "percentage" },
+] as const satisfies readonly { key: SupplementaryMetricKey; label: string; definition: string; unit: string; normalization: SupplementaryMetricNormalization }[];
 
 export const CapabilityEvidenceSchema = z.object({
   key: CapabilityMetricKeySchema,
@@ -218,9 +262,13 @@ export const CapabilityEvidenceSchema = z.object({
   peerPercentile: z.number().min(0).max(100).nullable(),
   peerGroupSize: z.number().int().nonnegative(),
   minutes: z.number().nonnegative(),
+  sampleMatches: z.number().int().nonnegative().optional(),
   competition: z.string(),
   season: z.string(),
   source: z.string(),
+  sourceField: z.string().optional(),
+  definition: z.string().optional(),
+  normalization: SupplementaryMetricNormalizationSchema.optional(),
 });
 export type CapabilityEvidence = z.infer<typeof CapabilityEvidenceSchema>;
 

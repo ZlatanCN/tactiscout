@@ -7,6 +7,7 @@ import {
   type PlayerProfile,
 } from "../domain/schemas.js";
 import type { KnowledgeSearchResult } from "../knowledge/schemas.js";
+import { positionMatches } from "../domain/positions.js";
 import {
   AskUserActionSchema,
   FinishActionSchema,
@@ -101,7 +102,7 @@ export function buildDecisionConstraints(input: {
   retrievedKnowledge: KnowledgeSearchResult[];
 }): RecruitmentDecisionConstraints {
   const eligiblePlayers = input.evaluatedPlayers.filter(({ player }) =>
-    !input.confirmedPosition || player.position === input.confirmedPosition,
+    !input.confirmedPosition || positionMatches(player.position, input.confirmedPosition),
   );
   const playerReportDocuments = input.retrievedKnowledge.filter((document) =>
     document.corpus === "player_report" && document.displayAllowed,
@@ -140,7 +141,7 @@ export function validateConclusion(input: {
       problems.push(`球员 ${recommendation.playerId} 没有能力评估证据。`);
       continue;
     }
-    if (input.confirmedPosition && evaluated.player.position !== input.confirmedPosition) {
+    if (input.confirmedPosition && !positionMatches(evaluated.player.position, input.confirmedPosition)) {
       problems.push(`球员 ${recommendation.playerId} 不符合用户确认的位置 ${input.confirmedPosition}。`);
       continue;
     }
@@ -155,7 +156,7 @@ export function validateConclusion(input: {
       problems.push(`球员 ${observation.playerId} 没有比赛数据评估，不能附加球员定性观察。`);
       continue;
     }
-    if (input.confirmedPosition && evaluated.player.position !== input.confirmedPosition) {
+    if (input.confirmedPosition && !positionMatches(evaluated.player.position, input.confirmedPosition)) {
       problems.push(`球员 ${observation.playerId} 不符合用户确认的位置 ${input.confirmedPosition}，不能附加球员定性观察。`);
       continue;
     }
@@ -165,7 +166,7 @@ export function validateConclusion(input: {
     }
     if (!document.displayAllowed) problems.push(`来源 ${document.sourceName} 不允许在报告中展示。`);
     const eligiblePlayers = Object.values(input.evaluatedPlayers).filter(({ player }) =>
-      !input.confirmedPosition || player.position === input.confirmedPosition,
+      !input.confirmedPosition || positionMatches(player.position, input.confirmedPosition),
     );
     if (!reportMatchesCandidate(document, evaluated.player, eligiblePlayers)) {
       problems.push(`报告文档 ${observation.documentId} 的实体元数据不匹配球员 ${evaluated.player.name}。`);

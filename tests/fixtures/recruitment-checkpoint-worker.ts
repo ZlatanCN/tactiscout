@@ -48,7 +48,6 @@ const actions: RecruitmentAction[] = mode === "pause"
       { action: "search_candidates", position: "ST", minimumMinutes: 0, limit: 10 },
   ]
   : [
-      { action: "search_candidates", position: "ST", minimumMinutes: 0, limit: 10 },
       { action: "evaluate_candidates", playerIds: [player.playerId] },
       { action: "search_player_reports", query: "中锋终结观察", playerNames: [player.name] },
       {

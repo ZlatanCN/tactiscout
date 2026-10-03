@@ -14,7 +14,7 @@ import { createRecruitmentCheckpointStore } from "./agent/checkpoint-store.js";
 import type { BaseCheckpointSaver } from "@langchain/langgraph";
 import type { PlayerRepository } from "./data/provider.js";
 import { BriefParserUnavailableError, parseRecruitmentBrief } from "./agent/brief-parser.js";
-import { RecruitmentCaseStateExpiredError, RecruitmentModelUnavailableError, configuredRecruitmentConversation, createRecruitmentConversation, type RecruitmentConversation, type RecruitmentPlanner } from "./agent/conversation.js";
+import { RecruitmentCaseStateExpiredError, RecruitmentModelTimeoutError, RecruitmentModelUnavailableError, configuredRecruitmentConversation, createRecruitmentConversation, type RecruitmentConversation, type RecruitmentPlanner } from "./agent/conversation.js";
 import { createLocalKnowledgeBase, type KnowledgeBase, type KnowledgeRepository } from "./knowledge/index.js";
 import { KnowledgeStatusSchema } from "./knowledge/schemas.js";
 import { createPlayerObservationLibrary, PlayerObservationNotFoundError, type PlayerObservationLibrary } from "./observations/library.js";
@@ -219,6 +219,7 @@ export function createApp(options: {
       const message = error instanceof Error ? error.message : "招募对话暂时无法继续。";
       if (error instanceof RecruitmentModelUnavailableError) return reply.code(503).send({ error: message });
       if (error instanceof RecruitmentCaseStateExpiredError) return reply.code(409).send({ error: message });
+      if (error instanceof RecruitmentModelTimeoutError) return reply.code(504).send({ error: message });
       request.log.error({ err: error, caseId }, "Recruitment conversation failed");
       return reply.code(502).send({ error: message });
     }

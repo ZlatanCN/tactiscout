@@ -29,9 +29,12 @@ const statLabels: Record<RawStatKey, string> = {
   tackles: "抢断",
   interceptions: "拦截",
   shotAssists: "射门助攻",
+  keyPasses: "关键传球",
 };
 
 function hasStat(player: PlayerProfile, key: RawStatKey): boolean {
+  // Older repositories and saved records predate the keyPasses field.
+  if (key === "keyPasses" && player.availableStats === undefined) return false;
   return player.availableStats === undefined || player.availableStats.includes(key);
 }
 
@@ -67,6 +70,7 @@ export function toPer90(player: PlayerProfile): Per90 {
       ? round((player.stats.tackles + player.stats.interceptions) * 90 / player.minutes)
       : null,
     shotAssists: per90(player, "shotAssists", player.stats.shotAssists),
+    keyPasses: per90(player, "keyPasses", player.stats.keyPasses),
   };
 }
 
@@ -115,17 +119,23 @@ function assessInPossessionRole(role: InPossessionRole, stats: Per90, player: Pl
     case "creation": {
       const evidence = [
         stats.shotAssists === null ? null : `每 90 分钟 ${stats.shotAssists} 次射门助攻`,
+        stats.keyPasses === null ? null : `每 90 分钟 ${stats.keyPasses} 次关键传球`,
         stats.assists === null ? null : `每 90 分钟 ${stats.assists} 次助攻`,
       ].filter((item): item is string => item !== null);
-      const complete = stats.shotAssists !== null && stats.assists !== null;
+      const creationSignals = [
+        stats.shotAssists === null ? null : stats.shotAssists * 15,
+        stats.keyPasses === null ? null : stats.keyPasses * 10,
+        stats.assists === null ? null : stats.assists * 8,
+      ].filter((value): value is number => value !== null);
+      const complete = creationSignals.length >= 2;
       return {
         phase: "in_possession",
         role,
-        fit: stats.shotAssists !== null && stats.assists !== null
-          ? bounded(stats.shotAssists * 15 + stats.assists * 8)
+        fit: complete
+          ? bounded(creationSignals.reduce((sum, value) => sum + value, 0))
           : null,
         evidence,
-        unsupportedAttributes: complete ? unsupportedByRole[role] : [...unsupportedByRole[role], missingReason(player, ["shotAssists", "assists"])],
+        unsupportedAttributes: complete ? unsupportedByRole[role] : [...unsupportedByRole[role], missingReason(player, ["shotAssists", "keyPasses", "assists"])],
       };
     }
   }

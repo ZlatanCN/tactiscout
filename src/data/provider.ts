@@ -10,6 +10,8 @@ import {
 } from "../domain/schemas.js";
 import { positionMatches } from "../domain/positions.js";
 import { SportmonksPlayerRepository, SportmonksProviderError } from "./sportmonks-provider.js";
+import { SkillCornerPlayerRepository } from "./skillcorner-provider.js";
+import { WyscoutPlayerRepository } from "./wyscout-provider.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const demoFile = path.join(projectRoot, "data", "demo-players.json");
@@ -49,6 +51,7 @@ interface MutablePlayer {
   tackles: number;
   interceptions: number;
   shotAssists: number;
+  keyPasses: number;
 }
 
 interface DemographicEntry {
@@ -166,13 +169,13 @@ function matchRows(value: unknown): any[] {
   return Array.isArray(record.matches) ? record.matches : [];
 }
 
-function getMutable(players: Map<string, MutablePlayer>, key: string, seed: Omit<MutablePlayer, "appearances" | "goals" | "assists" | "passesAttempted" | "passesCompleted" | "longPasses" | "carries" | "pressures" | "tackles" | "interceptions" | "shotAssists">): MutablePlayer {
+function getMutable(players: Map<string, MutablePlayer>, key: string, seed: Omit<MutablePlayer, "appearances" | "goals" | "assists" | "passesAttempted" | "passesCompleted" | "longPasses" | "carries" | "pressures" | "tackles" | "interceptions" | "shotAssists" | "keyPasses">): MutablePlayer {
   const existing = players.get(key);
   if (existing) return existing;
   const created: MutablePlayer = {
     ...seed, appearances: new Set(), goals: 0, assists: 0, passesAttempted: 0,
     passesCompleted: 0, longPasses: 0, carries: 0, pressures: 0, tackles: 0,
-    interceptions: 0, shotAssists: 0,
+    interceptions: 0, shotAssists: 0, keyPasses: 0,
   };
   players.set(key, created);
   return created;
@@ -295,8 +298,9 @@ async function loadStatsBombPlayers(): Promise<PlayerProfile[]> {
         goals: item.goals, assists: item.assists, passesAttempted: item.passesAttempted,
         passesCompleted: item.passesCompleted, longPasses: item.longPasses, carries: item.carries,
         pressures: item.pressures, tackles: item.tackles, interceptions: item.interceptions,
-        shotAssists: item.shotAssists,
+        shotAssists: item.shotAssists, keyPasses: item.keyPasses,
       },
+      availableStats: ["goals", "assists", "passesAttempted", "passesCompleted", "longPasses", "carries", "pressures", "tackles", "interceptions", "shotAssists"],
       eventDataComplete: item.eventDataComplete,
       source: "StatsBomb Open Data",
     })];
@@ -349,6 +353,26 @@ export function createRepository(): PlayerRepository {
         .map(Number),
       allowModelProcessing: process.env.TACTISCOUT_SPORTMONKS_AI_PROCESSING_ALLOWED === "true",
       ...(cacheTtlMs === undefined ? {} : { cacheTtlMs }),
+    });
+  }
+  if (mode === "skillcorner") {
+    return new SkillCornerPlayerRepository({
+      aggregatesDirectory: process.env.TACTISCOUT_SKILLCORNER_AGGREGATES_DIR
+        ?? path.join(projectRoot, ".data", "skillcorner-open-data", "aggregates"),
+      allowLocalStorage: process.env.TACTISCOUT_SKILLCORNER_LOCAL_STORAGE_ALLOWED === "true",
+      allowModelProcessing: process.env.TACTISCOUT_SKILLCORNER_AI_PROCESSING_ALLOWED === "true",
+      allowReportDisplay: process.env.TACTISCOUT_SKILLCORNER_REPORT_DISPLAY_ALLOWED === "true",
+    });
+  }
+  if (mode === "wyscout") {
+    return new WyscoutPlayerRepository({
+      dataDirectory: process.env.TACTISCOUT_WYSCOUT_DIR
+        ?? path.join(projectRoot, ".data", "wyscout-open-data"),
+      allowModelProcessing: process.env.TACTISCOUT_WYSCOUT_AI_PROCESSING_ALLOWED === "true",
+      competitionIds: (process.env.TACTISCOUT_WYSCOUT_COMPETITION_IDS ?? "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean),
     });
   }
   throw new SportmonksProviderError("invalid_configuration", `Unknown TACTISCOUT_DATA_MODE: ${mode}.`);
