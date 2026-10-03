@@ -8,6 +8,7 @@ import {
   type RecruitmentAction,
   type RecruitmentConversation,
   type RecruitmentPlanner,
+  type RecruitmentTraceEvent,
 } from "../src/agent/conversation.js";
 import type { PlayerRepository } from "../src/data/provider.js";
 import type { PlayerProfile } from "../src/domain/schemas.js";
@@ -91,6 +92,36 @@ test("the HTTP interface clearly reports when no model service is configured", a
   }
 });
 
+test("knowledge status uses the knowledge base injected into the application", async () => {
+  let statusReads = 0;
+  const knowledgeBase = {
+    async search() { return []; },
+    async status() {
+      statusReads += 1;
+      return {
+        indexedChunks: 42,
+        methodologyChunks: 40,
+        playerReportChunks: 2,
+        registeredSources: 7,
+        ingestiblePlayerReportSources: 3,
+        embeddingModel: "test-embedding",
+        indexPath: "/test/knowledge-index",
+      };
+    },
+  };
+  const app = createApp({ knowledgeBase, recruitmentConversation: unavailableRecruitmentConversation() });
+
+  try {
+    const response = await app.inject({ method: "GET", url: "/api/v1/knowledge/status" });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.json().indexedChunks, 42);
+    assert.equal(response.json().indexPath, "/test/knowledge-index");
+    assert.equal(statusReads, 1);
+  } finally {
+    await app.close();
+  }
+});
+
 test("a recruitment case investigates, pauses for a material choice, resumes, and recommends with evidence", async () => {
   const playerRecords: PlayerProfile[] = [
     {
@@ -134,6 +165,17 @@ test("a recruitment case investigates, pauses for a material choice, resumes, an
   const knowledgeBase = {
     async search(input: { corpus: "methodology" | "player_report" }) {
       return input.corpus === "methodology" ? [methodologyResult] : [];
+    },
+    async status() {
+      return {
+        indexedChunks: 1,
+        methodologyChunks: 1,
+        playerReportChunks: 0,
+        registeredSources: 1,
+        ingestiblePlayerReportSources: 0,
+        embeddingModel: "test-embedding",
+        indexPath: "/test/knowledge-index",
+      };
     },
   };
   const observedToolOrders: string[][] = [];
@@ -249,16 +291,26 @@ test("the decision limit produces a bounded no-evidence report instead of loopin
     sourceName: "Demo data",
     async loadPlayers() { return []; },
   };
-  const plannedFinish: RecruitmentAction = {
-    action: "finish",
-    targetTeam: null,
-    needSummary: "尚无证据。",
-    capabilityProfile: [],
-    recommendations: [],
-    limitationKeys: [],
-  };
+  const plannedActions: RecruitmentAction[] = [
+    { action: "search_methodology", query: "候选人评估" },
+    { action: "search_candidates", position: null, minimumMinutes: 0, limit: 5 },
+    { action: "search_methodology", query: "球员能力证据" },
+    { action: "search_candidates", position: null, minimumMinutes: 0, limit: 5 },
+    { action: "evaluate_candidates", playerIds: ["not-in-dataset"] },
+    { action: "search_candidates", position: null, minimumMinutes: 0, limit: 5 },
+    { action: "evaluate_candidates", playerIds: ["not-in-dataset"] },
+    { action: "search_candidates", position: null, minimumMinutes: 0, limit: 5 },
+    { action: "evaluate_candidates", playerIds: ["not-in-dataset"] },
+    { action: "search_candidates", position: null, minimumMinutes: 0, limit: 5 },
+  ];
+  let decisionCount = 0;
   const planner: RecruitmentPlanner = {
-    async decide() { return plannedFinish; },
+    async decide() {
+      decisionCount += 1;
+      const action = plannedActions.shift();
+      assert.ok(action);
+      return action;
+    },
   };
   const app = createApp({ recruitmentConversation: createRecruitmentConversation({ repository, planner }) });
 
@@ -270,6 +322,7 @@ test("the decision limit produces a bounded no-evidence report instead of loopin
     });
 
     assert.equal(response.statusCode, 200);
+    assert.equal(decisionCount, 10);
     assert.deepEqual(response.json().report.recommendations, []);
     assert.ok(response.json().report.limitations.some((item: string) => /安全步数上限/.test(item)));
   } finally {
@@ -323,6 +376,176 @@ test("independent tool budgets stop repeated methodology searches while preservi
   assert.equal(methodologyCalls, 2);
   assert.equal(actions.length, 0);
   assert.equal(response.report?.knowledgeCoverage.playerReportSearchPerformed, true);
+});
+
+test("the optional trace records action timing and actual tool scopes without model reasoning", async () => {
+  const player: PlayerProfile = {
+    playerId: "trace-player", name: "Trace Player", team: "Harbor City", age: 22, position: "CM",
+    competition: "Open League", season: "2025/26", minutes: 1200,
+    stats: { goals: 2, assists: 1, passesAttempted: 200, passesCompleted: 160, longPasses: 12, carries: 30, pressures: 100, tackles: 8, interceptions: 4, shotAssists: 9 },
+    source: "StatsBomb Open Data",
+  };
+  const actions: RecruitmentAction[] = [
+    { action: "search_methodology", query: "推进和压迫表现", limit: 3 },
+    { action: "search_candidates", position: "CM", maxAge: 23, minimumMinutes: 0, competition: null, season: null, limit: 5 },
+    { action: "evaluate_candidates", playerIds: [player.playerId] },
+    { action: "search_player_reports", query: "Trace Player 球员报告", playerNames: [player.name], limit: 2 },
+    { action: "finish", targetTeam: "Barcelona", needSummary: "寻找年轻中场。", capabilityProfile: ["推进", "前场压迫"], recommendations: [], limitationKeys: [] },
+  ];
+  const events: RecruitmentTraceEvent[] = [];
+  const conversation = createRecruitmentConversation({
+    repository: { mode: "demo", sourceName: "Demo", async loadPlayers() { return [player]; } },
+    planner: { async decide() { const action = actions.shift(); assert.ok(action); return action; } },
+    knowledgeBase: { async search() { return []; } },
+    observer: (event) => { events.push(event); },
+  });
+
+  const response = await conversation.turn({ threadId: "trace-public-seam", message: "为巴萨找 23 岁以下中场" });
+
+  assert.equal(response.status, "completed");
+  assert.deepEqual(events.filter((event) => event.phase === "decision").map((event) => event.action), [
+    "search_methodology", "search_candidates", "evaluate_candidates", "search_player_reports", "finish",
+  ]);
+  const candidateSearch = events.find((event) => event.phase === "tool" && event.toolName === "search_candidates");
+  assert.ok(candidateSearch && candidateSearch.phase === "tool");
+  assert.equal(candidateSearch.toolName, "search_candidates");
+  assert.equal(candidateSearch.ok, true);
+  assert.ok(candidateSearch.elapsedMs >= 0);
+  assert.deepEqual(candidateSearch.filters, { position: "CM", maxAge: 23, minimumMinutes: 0, competition: null, season: null, offset: 0, limit: 5, playerName: null });
+  assert.equal(candidateSearch.resultCount, 1);
+  assert.equal(candidateSearch.matchingRecordCount, 1);
+  const candidateEvaluation = events.find((event) => event.phase === "tool" && event.toolName === "evaluate_candidates");
+  assert.ok(candidateEvaluation && candidateEvaluation.phase === "tool");
+  assert.deepEqual(candidateEvaluation.filters, {
+    requestedPlayerCount: 1,
+    requestedPlayerIds: [player.playerId],
+    evaluatedPlayerIds: [player.playerId],
+  });
+  assert.ok(events.every((event) => !("reasoning" in event) && !("content" in event)));
+});
+
+test("the case stops a repeated policy-blocked action before spending the remaining model-call budget", async () => {
+  const player: PlayerProfile = {
+    playerId: "guard-player", name: "Guard Player", team: "Harbor City", age: 22, position: "CM",
+    competition: "Open League", season: "2025/26", minutes: 1200,
+    stats: { goals: 2, assists: 1, passesAttempted: 200, passesCompleted: 160, longPasses: 12, carries: 30, pressures: 100, tackles: 8, interceptions: 4, shotAssists: 9 },
+    source: "StatsBomb Open Data",
+  };
+  const actions: RecruitmentAction[] = [
+    { action: "search_methodology", query: "推进表现" },
+    { action: "search_candidates", position: "CM", minimumMinutes: 0, limit: 5 },
+    { action: "evaluate_candidates", playerIds: [player.playerId] },
+    { action: "finish", targetTeam: "Barcelona", needSummary: "完成。", capabilityProfile: [], recommendations: [], limitationKeys: [] },
+    { action: "finish", targetTeam: "Barcelona", needSummary: "再次尝试。", capabilityProfile: [], recommendations: [], limitationKeys: [] },
+  ];
+  let plannerCalls = 0;
+  const conversation = createRecruitmentConversation({
+    repository: { mode: "demo", sourceName: "Demo", async loadPlayers() { return [player]; } },
+    planner: {
+      async decide() {
+        plannerCalls += 1;
+        const action = actions.shift();
+        assert.ok(action);
+        return action;
+      },
+    },
+    knowledgeBase: { async search() { return []; } },
+  });
+
+  const response = await conversation.turn({ threadId: "repeated-policy-action", message: "为巴萨找一名中场" });
+
+  assert.equal(response.status, "completed");
+  assert.equal(plannerCalls, 5);
+  assert.equal(actions.length, 0);
+  assert.deepEqual(response.report?.recommendations, []);
+  assert.ok(response.report?.limitations.some((item) => /连续重复.*动作/.test(item)));
+});
+
+test("player report search covers every evaluated candidate even when the action names only one", async () => {
+  const players: PlayerProfile[] = [
+    {
+      playerId: "report-player-a", name: "Report Player A", team: "Harbor City", age: 22, position: "CM",
+      competition: "Open League", season: "2025/26", minutes: 1200,
+      stats: { goals: 2, assists: 1, passesAttempted: 200, passesCompleted: 160, longPasses: 12, carries: 30, pressures: 100, tackles: 8, interceptions: 4, shotAssists: 9 },
+      source: "StatsBomb Open Data",
+    },
+    {
+      playerId: "report-player-b", name: "Report Player B", team: "River Town", age: 21, position: "CM",
+      competition: "Open League", season: "2025/26", minutes: 1100,
+      stats: { goals: 1, assists: 2, passesAttempted: 180, passesCompleted: 144, longPasses: 9, carries: 26, pressures: 110, tackles: 10, interceptions: 6, shotAssists: 7 },
+      source: "StatsBomb Open Data",
+    },
+  ];
+  const actions: RecruitmentAction[] = [
+    { action: "search_methodology", targetTeam: "Barcelona", query: "中场推进" },
+    { action: "search_candidates", position: "CM", minimumMinutes: 0, limit: 5 },
+    { action: "evaluate_candidates", playerIds: players.map((player) => player.playerId) },
+    { action: "search_player_reports", query: "中场推进报告", playerNames: [players[0]!.name] },
+    { action: "finish", targetTeam: "Barcelona", needSummary: "完成。", capabilityProfile: [], recommendations: [], limitationKeys: [] },
+  ];
+  let actualReportNames: string[] = [];
+  const decisionModes: Array<"investigate" | "conclude" | undefined> = [];
+  let conclusionConstraints: Parameters<RecruitmentPlanner["decide"]>[0]["constraints"];
+  const events: RecruitmentTraceEvent[] = [];
+  const conversation = createRecruitmentConversation({
+    repository: { mode: "demo", sourceName: "Demo", async loadPlayers() { return players; } },
+    planner: {
+      async decide(input) {
+        decisionModes.push(input.decisionMode);
+        if (input.decisionMode === "conclude") conclusionConstraints = input.constraints;
+        const action = actions.shift();
+        assert.ok(action);
+        return action;
+      },
+    },
+    knowledgeBase: {
+      async search(input) {
+        if (input.corpus === "player_report") actualReportNames = input.playerNames;
+        return [];
+      },
+    },
+    observer: (event) => { events.push(event); },
+  });
+
+  const response = await conversation.turn({ threadId: "all-candidates-reports", message: "为巴萨找中场" });
+
+  assert.equal(response.status, "completed");
+  assert.deepEqual(actualReportNames, players.map((player) => player.name));
+  assert.equal(decisionModes.at(-1), "conclude");
+  assert.equal(conclusionConstraints?.targetTeam, "Barcelona");
+  assert.deepEqual(conclusionConstraints?.evaluatedCandidates.map(({ playerId }) => playerId), players.map((player) => player.playerId));
+  assert.ok(conclusionConstraints?.evaluatedCandidates.every(({ evidenceKeys }) => evidenceKeys.length === 8));
+  assert.deepEqual(conclusionConstraints?.reportObservations, []);
+  const reportTrace = events.find((event) => event.phase === "tool" && event.toolName === "search_player_reports");
+  assert.ok(reportTrace && reportTrace.phase === "tool");
+  assert.equal(reportTrace.filters.searchedPlayerCount, 2);
+  assert.deepEqual(reportTrace.filters.searchedPlayerIds, players.map((player) => player.playerId));
+});
+
+test("the case preserves the named recruitment club across later actions that omit it", async () => {
+  const player: PlayerProfile = {
+    playerId: "team-context-player", name: "Team Context Player", team: "Harbor City", age: 22, position: "CM",
+    competition: "Open League", season: "2025/26", minutes: 1200,
+    stats: { goals: 2, assists: 1, passesAttempted: 200, passesCompleted: 160, longPasses: 12, carries: 30, pressures: 100, tackles: 8, interceptions: 4, shotAssists: 9 },
+    source: "StatsBomb Open Data",
+  };
+  const actions: RecruitmentAction[] = [
+    { action: "search_methodology", targetTeam: "FC Barcelona", query: "中场推进" },
+    { action: "search_candidates", position: "CM", minimumMinutes: 0, limit: 5 },
+    { action: "evaluate_candidates", playerIds: [player.playerId] },
+    { action: "search_player_reports", query: "球员报告", playerNames: [player.name] },
+    { action: "finish", targetTeam: null, needSummary: "完成。", capabilityProfile: [], recommendations: [], limitationKeys: [] },
+  ];
+  const conversation = createRecruitmentConversation({
+    repository: { mode: "demo", sourceName: "Demo", async loadPlayers() { return [player]; } },
+    planner: { async decide() { const action = actions.shift(); assert.ok(action); return action; } },
+    knowledgeBase: { async search() { return []; } },
+  });
+
+  const response = await conversation.turn({ threadId: "preserved-target-team", message: "为巴萨找一名中场" });
+
+  assert.equal(response.status, "completed");
+  assert.equal(response.report?.targetTeam, "FC Barcelona");
 });
 
 test("missing event coverage and zero pass attempts are reported as unavailable evidence", async () => {

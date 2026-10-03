@@ -1,4 +1,4 @@
-import { ChatOpenAI } from "@langchain/openai";
+import { createChatModel } from "./chat-model.js";
 import { BriefFieldsSchema, type BriefFields } from "../domain/schemas.js";
 
 export class BriefParserUnavailableError extends Error {
@@ -13,13 +13,7 @@ export async function parseRecruitmentBrief(brief: string): Promise<BriefFields>
   const modelName = process.env.OPENAI_MODEL;
   if (!apiKey || !modelName) throw new BriefParserUnavailableError();
 
-  const baseURL = process.env.OPENAI_BASE_URL;
-  const model = new ChatOpenAI({
-    apiKey,
-    model: modelName,
-    temperature: 0,
-    ...(baseURL ? { configuration: { baseURL } } : {}),
-  });
+  const model = createChatModel(apiKey, modelName);
   const parser = model.withStructuredOutput(BriefFieldsSchema);
 
   try {

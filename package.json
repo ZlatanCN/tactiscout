@@ -12,6 +12,7 @@
     "build": "tsc -p tsconfig.json",
     "build:web": "pnpm --filter @tactiscout/web build",
     "test": "node --import tsx --test tests/*.test.ts",
+    "eval:local-agent": "node --import tsx src/evals/local-model-agent.ts",
     "knowledge:discover": "tsx src/knowledge/cli.ts discover",
     "knowledge:ingest": "tsx src/knowledge/cli.ts ingest",
     "knowledge:crawl": "tsx src/knowledge/cli.ts crawl",

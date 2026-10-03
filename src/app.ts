@@ -8,25 +8,33 @@ import {
   ParseBriefResponseSchema,
   ScoutInputSchema,
 } from "./domain/schemas.js";
-import { runScout } from "./agent/graph.js";
-import { dataRepository } from "./agent/graph.js";
+import { createScoutRunner, dataRepository } from "./agent/graph.js";
+import type { PlayerRepository } from "./data/provider.js";
 import { BriefParserUnavailableError, parseRecruitmentBrief } from "./agent/brief-parser.js";
 import { RecruitmentCaseStateExpiredError, RecruitmentModelUnavailableError, configuredRecruitmentConversation, type RecruitmentConversation } from "./agent/conversation.js";
-import { createLocalKnowledgeBase, type KnowledgeRepository } from "./knowledge/index.js";
+import { createLocalKnowledgeBase, type KnowledgeBase, type KnowledgeRepository } from "./knowledge/index.js";
 import { KnowledgeStatusSchema } from "./knowledge/schemas.js";
 
-export function createApp(options: { recruitmentConversation?: RecruitmentConversation; knowledgeBase?: KnowledgeRepository } = {}) {
+type AppKnowledgeBase = KnowledgeRepository & Pick<KnowledgeBase, "status">;
+
+export function createApp(options: {
+  playerRepository?: PlayerRepository;
+  recruitmentConversation?: RecruitmentConversation;
+  knowledgeBase?: AppKnowledgeBase;
+} = {}) {
   const app = Fastify({ logger: true });
+  const playerRepository = options.playerRepository ?? dataRepository;
   const knowledgeBase = options.knowledgeBase ?? createLocalKnowledgeBase();
-  const recruitmentConversation = options.recruitmentConversation ?? configuredRecruitmentConversation(dataRepository, knowledgeBase);
+  const recruitmentConversation = options.recruitmentConversation ?? configuredRecruitmentConversation(playerRepository, knowledgeBase);
+  const runScout = createScoutRunner(playerRepository);
   app.register(cors, { origin: true });
 
   app.get("/health", async () => ({ status: "ok", service: "tactiscout-api" }));
   app.get("/api/v1/dataset", async () => DatasetStatusSchema.parse({
-    mode: dataRepository.mode,
-    source: dataRepository.sourceName,
+    mode: playerRepository.mode,
+    source: playerRepository.sourceName,
   }));
-  app.get("/api/v1/knowledge/status", async () => KnowledgeStatusSchema.parse(await createLocalKnowledgeBase().status()));
+  app.get("/api/v1/knowledge/status", async () => KnowledgeStatusSchema.parse(await knowledgeBase.status()));
 
   app.post("/api/v1/requirements/parse", async (request, reply) => {
     const parsed = ParseBriefRequestSchema.safeParse(request.body);

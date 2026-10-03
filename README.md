@@ -45,7 +45,7 @@ pnpm install
 cp .env.example .env
 ```
 
-在 `.env` 设置 `OPENAI_API_KEY`、`OPENAI_MODEL` 和可选的 `OPENAI_BASE_URL`。随后分别启动 API 和网页：
+在 `.env` 设置 `OPENAI_API_KEY`、`OPENAI_MODEL` 和可选的 `OPENAI_BASE_URL`。连接 Ollama 等需要指定推理级别的兼容服务时，可设置 `OPENAI_REASONING_EFFORT`；例如 Qwen 可用 `none` 关闭额外思考输出，缩短工具决策等待。随后分别启动 API 和网页：
 
 ```bash
 pnpm dev
@@ -97,5 +97,13 @@ pnpm test
 pnpm build
 pnpm build:web
 ```
+
+`pnpm eval:local-agent` 会调用 `.env` 中配置的本地模型，运行一条真实的 LangGraph 招募案件，并输出不含密钥和模型隐藏推理的 JSON trace。可用 `-- --message "..." --answer "..."` 验证追问流程；传入一个或多个 `--answer` 后，评估器会要求 Agent 先调查再追问，并检查每次回答后是否在同一案件继续。若 Agent 需要再澄清，未提供下一条答案时会以 `needs_input` 结束，这仍算已验证同案继续。例如：
+
+```bash
+pnpm eval:local-agent -- --message "为拜仁寻找凯恩的替代者" --answer "请按中锋职责，优先未来接班" --expected-position ST
+```
+
+该评估会实际调用模型，耗时取决于本机推理速度。
 
 确定性测试通过 Fastify HTTP 边界和前端 API 契约验证追问/恢复、检索顺序、来源许可门控与证据报告，并使用注入的规划器、embedding 和固定球员记录，不依赖模型密钥或在线数据源。计划存储测试覆盖快照更新、版本迁移和损坏数据保护。

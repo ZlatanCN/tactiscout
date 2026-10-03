@@ -9,6 +9,7 @@ import {
   type KnowledgeDocumentInput,
   type KnowledgeSource,
 } from "./schemas.js";
+import { canAutomaticallyIngest } from "./permissions.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const PlosResponseSchema = z.object({
@@ -52,21 +53,6 @@ function articleUrlForDoi(doi: string): string | null {
   const url = new URL(`https://journals.plos.org/${journalPath}/article`);
   url.searchParams.set("id", doi);
   return url.toString();
-}
-
-function sourceAllowsArticle(source: KnowledgeSource, candidate: string): boolean {
-  const article = new URL(candidate);
-  return source.rights.automatedFetch
-    && source.rights.persistentStorage
-    && source.rights.aiProcessing
-    && source.allowedUrlPrefixes.some((prefixValue) => {
-      const prefix = new URL(prefixValue);
-      if (article.origin !== prefix.origin || !article.pathname.startsWith(prefix.pathname)) return false;
-      for (const [key, value] of prefix.searchParams) {
-        if (article.searchParams.get(key) !== value) return false;
-      }
-      return true;
-    });
 }
 
 function stringField(value: string | string[] | undefined): string {
@@ -116,7 +102,7 @@ export class PlosDiscoveryProvider {
         publishedAt: document.publication_date ?? null,
         license: /creative commons attribution|\bcc by\b/i.test(stringField(document.copyright)) ? "CC BY (按文章声明)" : null,
         articleUrl: articleUrl ?? `https://doi.org/${encodeURIComponent(document.id)}`,
-        registeredForIngestion: articleUrl !== null && sourceRecords.some((source) => sourceAllowsArticle(source, articleUrl)),
+        registeredForIngestion: articleUrl !== null && sourceRecords.some((source) => canAutomaticallyIngest(source, articleUrl)),
       };
     });
   }
@@ -125,7 +111,7 @@ export class PlosDiscoveryProvider {
     const sourceRecords = await this.readSources(options.registryPath);
     const articleUrl = articleUrlForDoi(doi);
     if (!articleUrl) throw new Error(`PLOS DOI ${doi} 暂不支持正文获取。`);
-    const source = sourceRecords.find((candidate) => sourceAllowsArticle(candidate, articleUrl));
+    const source = sourceRecords.find((candidate) => canAutomaticallyIngest(candidate, articleUrl));
     if (!source) throw new Error(`PLOS DOI ${doi} 尚无允许自动抓取、保存和 AI/RAG 处理的来源登记；未发出正文请求。`);
     const url = new URL("https://api.plos.org/search");
     url.searchParams.set("q", `id:"${doi}"`);

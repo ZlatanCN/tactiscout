@@ -19,6 +19,7 @@ import {
   type KnowledgeStatus,
 } from "./schemas.js";
 import { starterKnowledgeDocuments } from "./seed.js";
+import { assertCanIngestDocument } from "./permissions.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const tableName = "knowledge_chunks";
@@ -148,22 +149,6 @@ async function embedMany(embedder: TextEmbedder, texts: string[], kind: "query" 
 async function createExtractor(modelId: string) {
   const { pipeline } = await import("@huggingface/transformers");
   return pipeline("feature-extraction", modelId, { dtype: localEmbeddingDtype });
-}
-
-function normalizeUrl(value: string): URL {
-  const url = new URL(value);
-  if (url.protocol !== "https:") throw new KnowledgePermissionError("知识来源只接受已登记的 HTTPS 地址。");
-  return url;
-}
-
-function urlMatchesAllowedPrefix(candidateValue: string, prefixValue: string): boolean {
-  const candidate = normalizeUrl(candidateValue);
-  const prefix = normalizeUrl(prefixValue);
-  if (candidate.origin !== prefix.origin || !candidate.pathname.startsWith(prefix.pathname)) return false;
-  for (const [key, value] of prefix.searchParams) {
-    if (candidate.searchParams.get(key) !== value) return false;
-  }
-  return true;
 }
 
 function splitIntoChunks(content: string): string[] {
@@ -320,7 +305,7 @@ export class LocalKnowledgeBase implements KnowledgeBase {
     const input = KnowledgeDocumentInputSchema.parse(unparsedInput);
     const source = (await this.sources()).find((candidate) => candidate.id === input.sourceId);
     if (!source) throw new KnowledgePermissionError(`来源 ${input.sourceId} 尚未登记；已拒绝入库。`);
-    this.assertIngestAllowed(source, input);
+    assertCanIngestDocument(source, input);
     await this.assertIndexModelCompatible();
 
     const documentId = createHash("sha256").update(`${input.sourceId}\n${input.url}\n${input.title}`).digest("hex");
@@ -448,29 +433,6 @@ export class LocalKnowledgeBase implements KnowledgeBase {
       .then((contents) => JSON.parse(contents) as unknown)
       .then((contents) => KnowledgeSourceSchema.array().parse(contents));
     return this.registryPromise;
-  }
-
-  private assertIngestAllowed(source: KnowledgeSource, input: KnowledgeDocumentInput): void {
-    if (!source.allowedCorpora.includes(input.corpus)) {
-      throw new KnowledgePermissionError(`来源 ${source.name} 不允许进入 ${input.corpus} 语料。`);
-    }
-    if (!source.rights.persistentStorage || !source.rights.aiProcessing) {
-      throw new KnowledgePermissionError(`来源 ${source.name} 未同时允许正文持久化和 AI/RAG 处理。`);
-    }
-    if (input.acquisition === "authorized_fetch" && !source.rights.automatedFetch) {
-      throw new KnowledgePermissionError(`来源 ${source.name} 未获准自动抓取；已拒绝入库。`);
-    }
-    if (input.license !== source.license) {
-      throw new KnowledgePermissionError(`文档许可与来源登记不一致（应为 ${source.license}）。`);
-    }
-    let urlAllowed = false;
-    try {
-      urlAllowed = source.allowedUrlPrefixes.some((prefix) => urlMatchesAllowedPrefix(input.url, prefix));
-    } catch {
-      urlAllowed = false;
-    }
-    if (!urlAllowed) throw new KnowledgePermissionError(`文档 URL 不在来源 ${source.name} 的许可登记范围内。`);
-    if (!input.attribution.trim()) throw new KnowledgePermissionError("知识文档必须保留来源署名与许可信息。");
   }
 
   private async ensureSeedDocuments(): Promise<void> {

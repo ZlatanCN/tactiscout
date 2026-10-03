@@ -37,10 +37,19 @@ type State = typeof ScoutState.State;
 const repository = createRepository();
 export const dataRepository = repository;
 
-export async function runScout(input: ScoutInput): Promise<ScoutResponse> {
-  const result = await workflow.invoke({ input: ScoutInputSchema.parse(input) });
-  if (!result.report) throw new Error("Report node did not produce an output.");
-  return ScoutResponseSchema.parse(result.report);
+export function createScoutRunner(repo: PlayerRepository): (input: ScoutInput) => Promise<ScoutResponse> {
+  const workflow = createWorkflow(repo);
+  return async (input) => {
+    const result = await workflow.invoke({ input: ScoutInputSchema.parse(input) });
+    if (!result.report) throw new Error("Report node did not produce an output.");
+    return ScoutResponseSchema.parse(result.report);
+  };
+}
+
+const defaultScoutRunner = createScoutRunner(repository);
+
+export function runScout(input: ScoutInput): Promise<ScoutResponse> {
+  return defaultScoutRunner(input);
 }
 
 function buildCaveats(requirements: Requirements, repo: PlayerRepository): string[] {
@@ -170,5 +179,3 @@ function createWorkflow(repo: PlayerRepository) {
     .addEdge("create_report", END)
     .compile();
 }
-
-const workflow = createWorkflow(repository);
