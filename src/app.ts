@@ -9,9 +9,11 @@ import {
   ScoutInputSchema,
 } from "./domain/schemas.js";
 import { createScoutRunner, dataRepository } from "./agent/graph.js";
+import { createRecruitmentCheckpointStore } from "./agent/checkpoint-store.js";
+import type { BaseCheckpointSaver } from "@langchain/langgraph";
 import type { PlayerRepository } from "./data/provider.js";
 import { BriefParserUnavailableError, parseRecruitmentBrief } from "./agent/brief-parser.js";
-import { RecruitmentCaseStateExpiredError, RecruitmentModelUnavailableError, configuredRecruitmentConversation, type RecruitmentConversation } from "./agent/conversation.js";
+import { RecruitmentCaseStateExpiredError, RecruitmentModelUnavailableError, configuredRecruitmentConversation, createRecruitmentConversation, type RecruitmentConversation, type RecruitmentPlanner } from "./agent/conversation.js";
 import { createLocalKnowledgeBase, type KnowledgeBase, type KnowledgeRepository } from "./knowledge/index.js";
 import { KnowledgeStatusSchema } from "./knowledge/schemas.js";
 
@@ -20,14 +22,29 @@ type AppKnowledgeBase = KnowledgeRepository & Pick<KnowledgeBase, "status">;
 export function createApp(options: {
   playerRepository?: PlayerRepository;
   recruitmentConversation?: RecruitmentConversation;
+  recruitmentPlanner?: RecruitmentPlanner;
   knowledgeBase?: AppKnowledgeBase;
+  checkpointer?: BaseCheckpointSaver;
+  checkpointPath?: string;
 } = {}) {
   const app = Fastify({ logger: true });
   const playerRepository = options.playerRepository ?? dataRepository;
   const knowledgeBase = options.knowledgeBase ?? createLocalKnowledgeBase();
-  const recruitmentConversation = options.recruitmentConversation ?? configuredRecruitmentConversation(playerRepository, knowledgeBase);
+  const checkpointStore = options.recruitmentConversation || options.checkpointer
+    ? undefined
+    : createRecruitmentCheckpointStore(options.checkpointPath);
+  const checkpointer = options.checkpointer ?? checkpointStore?.checkpointer;
+  const recruitmentConversation = options.recruitmentConversation ?? (options.recruitmentPlanner
+    ? createRecruitmentConversation({
+      repository: playerRepository,
+      planner: options.recruitmentPlanner,
+      knowledgeBase,
+      checkpointer,
+    })
+    : configuredRecruitmentConversation(playerRepository, knowledgeBase, undefined, checkpointer));
   const runScout = createScoutRunner(playerRepository);
   app.register(cors, { origin: true });
+  if (checkpointStore) app.addHook("onClose", async () => checkpointStore.close());
 
   app.get("/health", async () => ({ status: "ok", service: "tactiscout-api" }));
   app.get("/api/v1/dataset", async () => DatasetStatusSchema.parse({

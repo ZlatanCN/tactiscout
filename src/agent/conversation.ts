@@ -1,5 +1,5 @@
 import { createChatModel } from "./chat-model.js";
-import { Annotation, Command, END, MemorySaver, START, StateGraph, interrupt } from "@langchain/langgraph";
+import { Annotation, Command, END, MemorySaver, START, StateGraph, interrupt, type BaseCheckpointSaver } from "@langchain/langgraph";
 import { z } from "zod/v4";
 import {
   CapabilityMetricDefinitions,
@@ -144,7 +144,7 @@ export class RecruitmentModelUnavailableError extends Error {
 
 export class RecruitmentCaseStateExpiredError extends Error {
   constructor() {
-    super("服务端已重启，案件的内部调查状态已丢失。请保留当前报告，新建案件并重新发送原始需求。浏览器中的历史记录不会被覆盖。");
+    super("服务端找不到此案件的内部调查状态。请保留浏览器中已有报告，新建案件并重新发送原始需求；已有浏览器记录不会被覆盖。");
     this.name = "RecruitmentCaseStateExpiredError";
   }
 }
@@ -208,6 +208,22 @@ const RecruitmentState = Annotation.Root({
 
 type State = typeof RecruitmentState.State;
 const maxDecisionsPerTurn = 10;
+const threadTurnTails = new Map<string, Promise<void>>();
+
+async function withThreadTurnLock<T>(threadId: string, operation: () => Promise<T>): Promise<T> {
+  const previous = threadTurnTails.get(threadId) ?? Promise.resolve();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const tail = previous.then(() => gate);
+  threadTurnTails.set(threadId, tail);
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (threadTurnTails.get(threadId) === tail) threadTurnTails.delete(threadId);
+  }
+}
 
 function teamHistory(players: PlayerProfile[], teamName: string) {
   const key = normalizeSearchText(teamName);
@@ -368,6 +384,7 @@ export function createRecruitmentConversation(input: {
   planner: RecruitmentPlanner;
   knowledgeBase?: KnowledgeRepository;
   observer?: RecruitmentTraceObserver;
+  checkpointer?: BaseCheckpointSaver;
 }): RecruitmentConversation {
   const { repository, planner, observer } = input;
   const knowledgeBase = input.knowledgeBase ?? createLocalKnowledgeBase();
@@ -787,38 +804,40 @@ export function createRecruitmentConversation(input: {
       deliver: "deliver_recommendation",
     })
     .addEdge("deliver_recommendation", END)
-    .compile({ checkpointer: new MemorySaver() });
+    .compile({ checkpointer: input.checkpointer ?? new MemorySaver() });
 
   return {
     async turn({ threadId, message, expectsExistingState = false }) {
-      const config = { configurable: { thread_id: threadId }, recursionLimit: maxDecisionsPerTurn * 5 + 10 };
-      const before = await workflow.getState(config);
-      const isWaitingForAnswer = before.tasks.some((task) => task.interrupts.length > 0);
-      const hasCheckpoint = Boolean(before.values && Object.keys(before.values).length > 0);
-      if (expectsExistingState && !hasCheckpoint) throw new RecruitmentCaseStateExpiredError();
-      if (isWaitingForAnswer) {
-        await workflow.invoke(new Command({ resume: message }), config);
-      } else {
-        await workflow.invoke({ userMessage: message }, config);
-      }
-      const after = await workflow.getState(config);
-      const state = after.values as State;
-      const interrupted = after.tasks.find((task) => task.interrupts.length > 0)?.interrupts[0];
-      if (interrupted && state.pendingQuestion) {
+      return withThreadTurnLock(threadId, async () => {
+        const config = { configurable: { thread_id: threadId }, recursionLimit: maxDecisionsPerTurn * 5 + 10 };
+        const before = await workflow.getState(config);
+        const isWaitingForAnswer = before.tasks.some((task) => task.interrupts.length > 0);
+        const hasCheckpoint = Boolean(before.values && Object.keys(before.values).length > 0);
+        if (expectsExistingState && !hasCheckpoint) throw new RecruitmentCaseStateExpiredError();
+        if (isWaitingForAnswer) {
+          await workflow.invoke(new Command({ resume: message }), config);
+        } else {
+          await workflow.invoke({ userMessage: message }, config);
+        }
+        const after = await workflow.getState(config);
+        const state = after.values as State;
+        const interrupted = after.tasks.find((task) => task.interrupts.length > 0)?.interrupts[0];
+        if (interrupted && state.pendingQuestion) {
+          return ConversationTurnResponseSchema.parse({
+            threadId,
+            status: "needs_input",
+            message: state.pendingQuestion.question,
+            question: { reason: state.pendingQuestion.reason },
+            report: null,
+          });
+        }
         return ConversationTurnResponseSchema.parse({
           threadId,
-          status: "needs_input",
-          message: state.pendingQuestion.question,
-          question: { reason: state.pendingQuestion.reason },
-          report: null,
+          status: "completed",
+          message: state.responseMessage || "调查已完成。",
+          question: null,
+          report: state.report,
         });
-      }
-      return ConversationTurnResponseSchema.parse({
-        threadId,
-        status: "completed",
-        message: state.responseMessage || "调查已完成。",
-        question: null,
-        report: state.report,
       });
     },
   };
@@ -828,9 +847,10 @@ export function configuredRecruitmentConversation(
   repository: PlayerRepository,
   knowledgeBase?: KnowledgeRepository,
   observer?: RecruitmentTraceObserver,
+  checkpointer?: BaseCheckpointSaver,
 ): RecruitmentConversation {
   try {
-    return createRecruitmentConversation({ repository, planner: new OpenAIRecruitmentPlanner(), knowledgeBase, observer });
+    return createRecruitmentConversation({ repository, planner: new OpenAIRecruitmentPlanner(), knowledgeBase, observer, checkpointer });
   } catch (error) {
     if (error instanceof RecruitmentModelUnavailableError) return unavailableRecruitmentConversation();
     throw error;

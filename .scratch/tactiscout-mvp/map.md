@@ -12,7 +12,7 @@ Labels: wayfinder:map
 - 当前主要真实数据源 StatsBomb Open Data 不足以核验现役完整阵容；产品必须区分已查证事实、推断和数据缺口。
 - 全 TypeScript；当前技术栈是 React、Fastify 和 LangGraph。
 - 根目录 `CONTEXT.md` 是唯一领域词汇表；重要术语按其中定义使用。
-- [MVP 规格](spec.md) 收录用户故事、接口约定和实现决策；[球探与 Agent 流程研究](research/football-recruitment-and-agent-workflow.md)记录来源与产品推导；[数据源与抓取边界研究](research/football-data-sources-and-crawling.md)记录联网能力、授权路线与数据出处设计；[RAG 实践与足球语料调查](research/scouting-rag-practices-and-sources.md)记录检索实践和可用来源；[许可感知的双语料 RAG 设计](issues/10-permission-aware-rag-design.md)确定产品原则。
+- [MVP 规格](spec.md) 收录用户故事、接口约定和实现决策；[球探与 Agent 流程研究](research/football-recruitment-and-agent-workflow.md)记录来源与产品推导；[数据源与抓取边界研究](research/football-data-sources-and-crawling.md)记录联网能力、授权路线与数据出处设计；[RAG 实践与足球语料调查](research/scouting-rag-practices-and-sources.md)记录检索实践和可用来源；[LangGraph Agent 与 Harness 调研](research/langgraph-agent-harness-patterns.md)对比官方开源实现与 TactiScout 架构；[许可感知的双语料 RAG 设计](issues/10-permission-aware-rag-design.md)确定产品原则。
 - 用户已授权继续实现；方向收敛后继续推进，不把项目留在纯计划阶段。
 - 已实现对话案件 HTTP seam、LangGraph 工具决策循环与可中断追问；浏览器已改为自由对话入口，并保存对话和最近完整报告。
 - 已加深结论证据策略与来源许可判定 module；Fastify 应用组合统一注入球员仓库和知识库，工具 trace 使用实际执行参数。详见 [Agent 架构加深](issues/12-agent-architecture-deepening.md)。
@@ -20,7 +20,8 @@ Labels: wayfinder:map
 - 已完成 [对话式招募案件 MVP](issues/08-conversational-case-mvp.md)：覆盖早期追问/结束保护、证据约束、证据覆盖摘要、案件状态失效提示、指标对比和 v1 计划迁移。
 - 已接入许可感知的双语料 RAG：PLOS 元数据发现与登记 DOI 正文采集、本地来源许可登记、LanceDB 混合检索、本地 q8 multilingual E5 embedding 和 LangGraph 的“方法画像 → 结构化评估 → 球员报告”顺序保护。已实际完成登记论文的许可核验、113 个片段入库和本地语义检索；尚无可用球员报告来源。
 - 本机 `.env` 已接入 Ollama `qwen3.5:9b`；[本地模型 Agent 验收](issues/11-local-model-agent-evaluation.md)标准中场与凯恩替代者两种场景均已通过。`pnpm eval:local-agent` 记录工具范围、结果数量和耗时，不记录密钥或模型隐藏推理；标准场景最近一次 180.2 秒完成 5 次模型决策，评估 5 名球员并输出 2 个有比赛证据支持的推荐。凯恩替代者场景检索本地参考球员后提出追问，恢复同案并按 ST 搜索；演示集没有中锋，所以继续追问且未跨位置推荐。动态结论 schema 限定可引用的球员、指标与报告文档，确定性测试仍不依赖模型密钥。
-- 图 checkpoint 目前用 `MemorySaver`；API 进程重启会丢失内部调查状态。单独评估持久化 checkpoint 后端是后续工作。
+- [LangGraph Agent 与 Harness 调研](research/langgraph-agent-harness-patterns.md)现包含 Deep Agents、Open Deep Research、Exa、Lyft、Kensho、AppFolio、Open SWE 及两个足球项目的公开做法；共同模式是外层显式编排、窄职责分支、结构化交接和轨迹评估，不追求 Agent 数量。
+- [招募案件 checkpoint 跨重启恢复](issues/13-durable-case-checkpoints.md)完成：LangGraph 内部案件状态默认存本机 `.data/recruitment-cases.sqlite`，可用 `TACTISCOUT_CHECKPOINT_PATH` 改路径；追问暂停后 API 重启可由同一案件编号恢复。计划与可见历史仍在浏览器 `localStorage`。
 - 使用 `.scratch/<feature>/` 保存地图、规格和单独的问题文件；本地 triage 标签沿用项目默认值。
 
 ## Decisions so far
@@ -36,6 +37,7 @@ Labels: wayfinder:map
 - [研究足球数据源与联网访问边界](issues/09-data-source-access-and-provenance.md)：当前只读本地数据；后续先建来源登记和证据出处，再接授权 API 或许可范围内的报告检索。
 - [许可感知的双语料球探 RAG](issues/10-permission-aware-rag-design.md)：报告作为带出处的定性证据参与候选发现与后续考察，不直接成为能力分；通过小型标注集分别评测检索、证据支持和 Agent 决策。
 - [Agent 架构加深](issues/12-agent-architecture-deepening.md)：集中结论证据和来源许可规则，统一应用运行依赖，去除重复工具 trace 分派。
+- [招募案件 checkpoint 跨重启恢复](issues/13-durable-case-checkpoints.md)：以本机 SQLite 持久化 LangGraph 案件状态；同一案件轮次按 thread 串行，不同案件并行。
 
 ## Not yet specified
 
@@ -43,7 +45,6 @@ Labels: wayfinder:map
 - 继续寻找允许保存并用于 AI/RAG 的具名球员报告来源；针对每个已准入来源补正文采集 adapter、刷新/删除策略。
 - 当前来源发现只覆盖 PLOS 学术文章；通用网页搜索 provider、最终 embedding 模型和 RAG/Agent 评测阈值仍待验证。
 - 选择哪家授权数据源、取得哪些赛事覆盖，以及线上缓存/展示/AI 使用的合同范围。
-- 如何为 LangGraph 的跨重启暂停恢复选择 checkpoint 存储，同时继续把用户计划保存在 localStorage。
 
 ## Out of scope
 

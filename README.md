@@ -29,12 +29,12 @@ TactiScout 是一个 TypeScript 足球球探研究原型。用户用一句自然
 
 - React + TypeScript：自然语言对话、追问输入、证据报告、候选人比较和本地计划。
 - Fastify：对话案件 HTTP 接口与共享 Zod 请求/响应契约。
-- LangGraph `StateGraph`：共享案件状态、模型决策与数据工具循环、条件路由、`interrupt` 人机交互、证据审核与 checkpoint。
+- LangGraph `StateGraph`：共享案件状态、模型决策与数据工具循环、条件路由、`interrupt` 人机交互、证据审核与 checkpoint。外层案件步骤由图控制，阶段内由模型按工具结果决定继续调查、补查、追问或结束。
 - `@langchain/openai`：服务端调用兼容 OpenAI 的模型；密钥不会发送到浏览器。
 - StatsBomb Open Data 适配器与清楚标注的虚构演示数据。
 - LanceDB 本地索引、许可登记门控和 Transformers.js multilingual E5 q8 本地 embedding。第一次执行 RAG 检索时会下载量化模型权重并缓存。也可显式切换到兼容 OpenAI 的 embedding 服务；切换前要考虑文档会发送给该服务处理。
 
-当前图使用 `MemorySaver`。它可在 API 进程存活期间暂停并恢复案件；API 进程重启后，图的内部工具状态会丢失。浏览器仍保存可见对话和最近报告，但这不能恢复内部检查点。若用户尝试继续已失效案件，接口会返回明确提示，保留原有浏览器记录并要求新建案件、重述需求。持久化图状态需要另选 checkpoint 存储；它与用户计划存储是两个独立问题。
+招募案件的 LangGraph checkpoint 默认保存在本地 SQLite 文件 `.data/recruitment-cases.sqlite`；可用 `TACTISCOUT_CHECKPOINT_PATH` 改位置。API 进程重启后，已暂停案件可通过原 `caseId` 恢复。浏览器中的对话记录和招募计划/报告快照仍由 `localStorage` 保存；浏览器数据与服务端图执行状态是两类独立数据。同一个案件在单个 API 进程内串行处理，不同案件可以并行。当前 SQLite saver 与进程内互斥适用于本机单进程原型；多进程部署需要共享 checkpoint 后端和跨进程互斥方案。
 
 ## 启动
 

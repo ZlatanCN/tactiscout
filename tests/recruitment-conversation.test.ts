@@ -68,8 +68,8 @@ test("the HTTP interface explains when a saved case checkpoint expired after a s
     });
 
     assert.equal(response.statusCode, 409);
-    assert.match(response.json().error, /服务端已重启/);
-    assert.match(response.json().error, /历史记录不会被覆盖/);
+    assert.match(response.json().error, /找不到此案件的内部调查状态/);
+    assert.match(response.json().error, /浏览器中已有报告/);
   } finally {
     await app.close();
   }

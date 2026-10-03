@@ -63,7 +63,7 @@ LLM 是调研协调者：它从自然语言建立初步任务假设，查看工�
 - RAG 文档与向量索引首版使用服务端本地持久化，和浏览器 `localStorage` 中的招募计划分开管理；MVP 使用 LanceDB 本地目录。检索结合向量语义、BM25 式关键词相关度和 reciprocal-rank fusion，并先按语料、许可门控与实体元数据过滤。
 - 向量生成默认使用服务端本地 Transformers.js embedding provider，模型初选 multilingual E5 ONNX；保留可显式配置的远程 embedding provider 接口，但不能静默把正文发送到第三方。首次使用本地模型需要下载并缓存权重；模型标识/版本属于索引元数据，变更模型需重建向量。
 - RAG 与 Agent 评测使用小型标注集，分别检查检索命中、引用/结论是否受证据支持、以及工具选择与追问决策。LLM-as-judge 只能作为辅助；没有可信球探标注时，不宣称推荐排序有客观准确率。
-- 第一版使用 `MemorySaver` 保存图的运行时 checkpoint。它可在 API 进程存活期间恢复暂停案件；重启 API 会丢失内部工具状态。浏览器会保存可见对话和报告快照，但这不等于持久化图 checkpoint；尝试恢复丢失的案件时，接口返回明确错误，要求新建案件并重述需求。持久化 checkpoint 后端仍待决策。
+- 案件图默认使用本机 SQLite checkpointer，数据库位于 `.data/recruitment-cases.sqlite`，可通过 `TACTISCOUT_CHECKPOINT_PATH` 改位置；Fastify 负责创建并在关闭时释放连接。暂停的案件可在 API 进程重启后用同一 `caseId` 恢复。浏览器中的对话/报告快照仍只存于 localStorage，与服务端 LangGraph checkpoint 分开。当前 SQLite 方案面向单机单服务进程；多实例部署时需改用共享的生产级 checkpointer，并补充案件归属校验。
 - 主要表现数据来源先使用本地 StatsBomb Open Data，并明确说明覆盖的赛事/赛季范围；该数据集不代表完整的当前俱乐部阵容或转会市场。不能从历史比赛阵容推断俱乐部当前人员情况。
 - 用户可见的球队/球员事实、数据来源/赛季、样本风险、推断项和缺失信息都必须区分显示。没有可靠阵容数据时，Agent 需告知用户并请求必要材料或限定可分析范围，不能凭模型记忆伪装实时审查。
 - 界面面向中文用户，新增和调整的用户可见中文统一使用简体中文。
