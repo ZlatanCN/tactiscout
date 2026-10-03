@@ -13,6 +13,7 @@ import {
   type SavedRecruitmentPlan,
 } from "./plans";
 import type { DatasetStatus, RecruitmentProgress, RecruitmentReport } from "../../src/domain/schemas.js";
+import { describeDatasetScope } from "../../src/domain/dataset-scope.js";
 import { firstPartyObservationSourceId } from "../../src/knowledge/source-ids.js";
 
 const suggestedBriefs = [
@@ -260,7 +261,7 @@ function App() {
           <span>TactiScout</span>
         </a>
         <div className="topbar-meta">
-          <span className={`source-pill ${dataset?.mode === "statsbomb" ? "source-pill-live" : ""}`}><span className="status-dot" />{datasetLabel}</span>
+          <span className={`source-pill ${dataset?.mode === "sportmonks" ? "source-pill-live" : ""}`}><span className="status-dot" />{datasetLabel}</span>
           <button type="button" className="text-button observations-open-button" onClick={() => setPlayerObservationsOpen(true)}>球探观察</button>
           <span className="topbar-caption">对话式球探工作台 <span>·</span> MVP</span>
         </div>
@@ -334,7 +335,7 @@ function App() {
           </section>
 
           <section className="report-panel" aria-live="polite">
-            {report ? <RecruitmentReportView report={report} reportedAt={reportAt} isWaiting={waitingForAnswer} /> : <EmptyReport datasetLabel={datasetLabel} />}
+            {report ? <RecruitmentReportView report={report} reportedAt={reportAt} isWaiting={waitingForAnswer} /> : <EmptyReport dataset={dataset} datasetLabel={datasetLabel} />}
           </section>
         </div>
       </main>
@@ -367,7 +368,7 @@ function SavedPlans({ plans, activePlanId, onOpen, onDelete, onNew }: {
   );
 }
 
-function EmptyReport({ datasetLabel }: { datasetLabel: string }) {
+function EmptyReport({ dataset, datasetLabel }: { dataset: DatasetStatus | null; datasetLabel: string }) {
   return (
     <div className="empty-state report-empty-state">
       <div className="pitch-art" aria-hidden="true"><span className="pitch-circle" /><span className="pitch-dot" /><span className="pitch-line" /></div>
@@ -375,6 +376,7 @@ function EmptyReport({ datasetLabel }: { datasetLabel: string }) {
       <h2>先说说你要解决的<br /><em>阵容问题。</em></h2>
       <p>球探会围绕可观察的比赛表现建立能力画像，比较候选人的数据、样本和风险，不会用未经验证的总分替代判断。</p>
       <div className="empty-data-note"><span className="status-dot" />当前数据来源：{datasetLabel}</div>
+      <DatasetScopeCard scope={dataset ? describeDatasetScope(dataset.mode) : null} showCoverageState={false} />
       <div className="empty-index"><span>INVESTIGATE</span><i /><span>COMPARE</span><i /><span>EXPLAIN</span></div>
     </div>
   );
@@ -398,6 +400,7 @@ function RecruitmentReportView({ report, reportedAt, isWaiting }: { report: Recr
       {isWaiting && <p className="snapshot-warning">正在等待补充信息。下方保留最近一次完整报告，后续调查完成后会更新。</p>}
       <section className="need-summary"><span className="report-section-label">需求理解</span><p>{report.needSummary}</p></section>
       {report.capabilityProfile.length > 0 && <section className="capability-profile"><span className="report-section-label">目标能力画像 · Agent 根据需求推导，可继续修正</span><ul>{report.capabilityProfile.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul></section>}
+      <DatasetScopeCard scope={report.datasetScope ?? describeDatasetScope(report.datasetMode)} showCoverageState />
       {report.searchScopes.length > 0 && <section className="search-scope"><span className="report-section-label">候选检索范围</span><p>以下是 Agent 实际使用的条件；可继续在对话中补充或纠正。</p><ul>{report.searchScopes.map((scope, index) => <li key={`${scope.source}-${index}`}><strong>{scope.source === "user_confirmed" ? "用户确认" : scope.source === "mixed" ? "包含用户确认条件" : "Agent 根据对话解释"}</strong>{" · "}{[
         scope.position ? `位置 ${scope.position}` : null,
         scope.maxAge !== null ? `${scope.maxAge} 岁及以下` : null,
@@ -416,6 +419,22 @@ function RecruitmentReportView({ report, reportedAt, isWaiting }: { report: Recr
       {report.limitations.length > 0 && <details className="caveats-panel" open><summary><span>数据范围与风险</span><span className="details-plus">+</span></summary><ul>{report.limitations.map((limitation, index) => <li key={`${limitation}-${index}`}>{limitation}</li>)}</ul></details>}
       <div className="report-source"><span><i className="status-dot" />{report.dataSource}</span>{reportedAt && <span>报告时间 {formatDate(reportedAt)}</span>}</div>
     </div>
+  );
+}
+
+function DatasetScopeCard({ scope, showCoverageState }: { scope: RecruitmentReport["datasetScope"] | null; showCoverageState: boolean }) {
+  if (!scope) {
+    return <section className="dataset-scope-card dataset-scope-unavailable" aria-label="数据范围说明"><span className="report-section-label">数据范围</span><p>当前数据来源说明暂时不可用。</p></section>;
+  }
+  return (
+    <section className={`dataset-scope-card dataset-scope-${scope.kind}`} aria-label="数据范围说明">
+      <div className="dataset-scope-heading"><span className="report-section-label">数据范围</span><strong>{scope.title}</strong></div>
+      <p>{scope.summary}</p>
+      {scope.observedCoverage && <p className="dataset-scope-observed">本次读取 {scope.observedCoverage.playerRecordCount.toLocaleString()} 条球员记录 · 赛事 {scope.observedCoverage.competitions.join("、") || "未知"} · 赛季 {scope.observedCoverage.seasons.join("、") || "未知"}</p>}
+      {!scope.observedCoverage && showCoverageState && <p className="dataset-scope-observed">本次数据池覆盖范围未知；具体候选范围需依据已核实的赛事、赛季和球员来源确认。</p>}
+      {!scope.observedCoverage && !showCoverageState && <p className="dataset-scope-observed">开始调查后，报告会记录本次实际读取到的赛事、赛季和球员记录数。</p>}
+      <details><summary>这份数据的限制</summary><ul>{scope.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul></details>
+    </section>
   );
 }
 

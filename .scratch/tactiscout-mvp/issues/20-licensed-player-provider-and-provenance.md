@@ -10,7 +10,7 @@ Make TactiScout capable of exploring a real, provider-backed current-player pool
 
 ## Research basis
 
-See [provider landscape research](../research/football-data-provider-landscape-2026-10.md). Sportmonks documents season team lists, season squad/player statistics, provider IDs, pagination and server-side token handling. Its free coverage is restricted to the Danish Superliga and Scottish Premiership. Its public terms permit use in a product, but the reviewed material does not specifically resolve external LLM processing, so model use must be disabled unless the operator has confirmed that permission.
+See [provider landscape research](../research/football-data-provider-landscape-2026-10.md). Sportmonks documents season team lists, season squad/player statistics, provider IDs, pagination and server-side token handling. Its current public plan page lists Starter at €29/month for five selected leagues; an optional xG/Pressure Index bundle is priced separately. Older free-coverage details may be stale and account entitlements must be checked directly. Its public terms permit product storage/display, but the reviewed material does not specifically resolve external LLM processing, so model use must be disabled unless the operator has confirmed that permission.
 
 ## Acceptance criteria
 
@@ -29,6 +29,7 @@ See [provider landscape research](../research/football-data-provider-landscape-2
 
 - 2026-10-04：从 issue 09 的来源 provenance 落地顺序开始执行。官方文档表明季赛球队列表需分页；球员赛季 squad/detail 可连同统计取回；API v3 未记录的统计不会返回。此 issue 将先把安全、可验证的 adapter 做完整，真实联赛联调在获得凭据与确认对应模型处理许可后完成。
 - 2026-10-04：adapter、fixture 测试和球员卡来源显示已实现；统计覆盖需由部署者按 Sportmonks 账户/联赛显式登记，避免将套餐缺项误当零。官方统计类型以 Sportmonks `player-statistics` 文档为准；真实账户联调仍未完成。
+- 2026-10-04：重新核对 Sportmonks 当前官方价格页与服务条款，修正旧文档中的免费联赛/限额描述。当前公开页列出 Starter €29/月、5 个联赛、每实体每小时 2,000 次调用；xG/Pressure Index 另付费。14 天付费试用需有效银行卡并会自动续费，除非到期前取消。真实账户和目标联赛 entitlement 仍未联调。
 
 ## Answer
 

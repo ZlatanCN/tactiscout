@@ -87,6 +87,20 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .empty-state h2 { margin: 12px 0 10px; font-size: clamp(27px, 3vw, 40px); font-weight: 500; letter-spacing: -.06em; line-height: 1.25; }
 .empty-state > p { max-width: 370px; margin: 0; color: #7e847d; font-size: 12px; line-height: 1.8; }
 .empty-data-note { display: flex; align-items: center; gap: 8px; margin-top: 22px; color: #81877f; font-size: 10px; }
+.dataset-scope-card { position: relative; z-index: 1; width: 100%; margin-top: 12px; padding: 11px 12px; border: 1px solid #e7e9e1; border-radius: 5px; background: rgba(255,254,250,.9); }
+.dataset-scope-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 10px; }
+.dataset-scope-heading strong { color: #485c4c; font-size: 10px; font-weight: 600; }
+.dataset-scope-card > p { margin: 5px 0 0; color: #788177; font-size: 9px; line-height: 1.55; }
+.dataset-scope-card > .dataset-scope-observed { color: #65796a; font-size: 8px; }
+.dataset-scope-card details { margin-top: 5px; color: #899087; font-size: 8px; }
+.dataset-scope-card summary { width: fit-content; color: #708074; cursor: pointer; }
+.dataset-scope-card ul { display: grid; gap: 3px; margin: 5px 0 0; padding-left: 14px; line-height: 1.5; }
+.dataset-scope-card li::marker { color: #92a191; }
+.dataset-scope-fictional_demo { border-color: #ecdfc8; background: rgba(250,246,236,.92); }
+.dataset-scope-fictional_demo .dataset-scope-heading strong { color: #896c42; }
+.dataset-scope-current_limited { border-color: #d8e5da; background: rgba(244,248,242,.93); }
+.dataset-scope-current_limited .dataset-scope-heading strong { color: #3d6d4c; }
+.dataset-scope-unavailable { border-style: dashed; }
 .empty-index { position: absolute; bottom: 25px; left: clamp(30px, 6vw, 82px); display: flex; align-items: center; gap: 9px; color: #a1a39c; font-family: var(--mono); font-size: 8px; letter-spacing: .08em; }.empty-index i { width: 20px; height: 1px; background: #d9d8d1; }
 .pitch-art { position: absolute; top: 50%; right: -64px; width: 330px; height: 400px; border: 1px solid rgba(29,100,75,.09); border-radius: 48%; transform: translateY(-50%) rotate(-19deg); }.pitch-circle { position: absolute; top: 50%; left: 50%; width: 110px; height: 110px; border: 1px solid rgba(29,100,75,.12); border-radius: 50%; transform: translate(-50%,-50%); }.pitch-dot { position: absolute; top: 48%; left: 28%; width: 9px; height: 9px; border-radius: 50%; background: var(--orange); box-shadow: 0 0 0 8px rgba(228,154,86,.12); }.pitch-line { position: absolute; top: 0; bottom: 0; left: 50%; border-left: 1px solid rgba(29,100,75,.08); }
 .loading-state { min-height: 590px; display: flex; flex-direction: column; align-items: center; justify-content: center; }.loading-state h2 { margin: 14px 0 8px; font-size: 20px; font-weight: 600; }.loading-state p { margin: 0; color: var(--muted); font-size: 12px; }.loading-orbit { display: grid; width: 58px; height: 58px; place-items: center; margin-bottom: 22px; border: 1px solid #d6e2d9; border-radius: 50%; }.loading-orbit span { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 9px #e9f0ea, 0 0 0 18px #f2f5f1; animation: pulse 1.3s ease-in-out infinite; }@keyframes pulse { 50% { transform: scale(.7); opacity: .6; } }
@@ -289,6 +303,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .report-status { flex: 0 0 auto; padding: 6px 8px; border: 1px solid #cfe0d2; border-radius: 999px; color: var(--green); background: #f0f5ef; font-size: 8px; }
 .report-status-pending { border-color: #ead9bd; color: #986d36; background: #fbf4e9; }
 .need-summary, .capability-profile { padding: 13px 0; border-bottom: 1px solid #efeee8; }
+.report-content > .dataset-scope-card { margin: 10px 0 12px; }
 .report-section-label { color: #68786a; font-size: 9px; font-weight: 700; }
 .need-summary p { margin: 6px 0 0; color: #657067; font-size: 10px; line-height: 1.7; }
 .capability-profile ul { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0; padding: 0; list-style: none; }

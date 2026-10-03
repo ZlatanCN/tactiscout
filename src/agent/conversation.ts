@@ -11,12 +11,14 @@ import {
   type CapabilityEvidence,
   type CapabilityMetricKey,
   type DatasetMode,
+  type DatasetScope,
   type Position,
   type ConversationTurnResponse,
   type PlayerProfile,
   type RecruitmentReport,
 } from "../domain/schemas.js";
 import { type PlayerRepository } from "../data/provider.js";
+import { describeDatasetScope } from "../domain/dataset-scope.js";
 import { positionMatches } from "../domain/positions.js";
 import { toPer90 } from "./scoring.js";
 import { createLocalKnowledgeBase, type KnowledgeRepository } from "../knowledge/index.js";
@@ -420,6 +422,7 @@ const RecruitmentState = Annotation.Root({
   replacementRoleQuestionAsked: replaceable<boolean>(() => false),
   pendingQuestion: replaceable<PendingQuestion | null>(() => null),
   report: replaceable<RecruitmentReport | null>(() => null),
+  datasetScope: replaceable<DatasetScope | undefined>(() => undefined),
   responseMessage: replaceable<string>(() => ""),
   decisionSteps: replaceable<number>(() => 0),
   toolUses: replaceable<ToolUseCounts>(emptyToolUseCounts),
@@ -1155,6 +1158,7 @@ export function createRecruitmentConversation(input: {
           });
           return {
             toolUses,
+            datasetScope: describeDatasetScope(repository.mode, players),
             targetTeam: action.teamName,
             hasInvestigated: true,
             history: [{ role: "tool" as const, toolName: action.action, content: JSON.stringify(result) }],
@@ -1194,6 +1198,7 @@ export function createRecruitmentConversation(input: {
           }));
           return {
             toolUses,
+            datasetScope: describeDatasetScope(repository.mode, players),
             candidateSearchCursors: { [cursorKey]: result.nextOffset },
             discoveredPlayers: additions,
             hasInvestigated: true,
@@ -1395,6 +1400,7 @@ export function createRecruitmentConversation(input: {
         limitations: limitationsFor(state, repository, action),
         dataSource: repository.sourceName,
         datasetMode: repository.mode,
+        datasetScope: state.datasetScope ?? describeDatasetScope(repository.mode),
       });
       const responseMessage = recommendations.length
         ? "已完成一轮调查。名单顺序表示 Agent 建议优先继续考察的顺序，不是经过验证的综合能力排名。"

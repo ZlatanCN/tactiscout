@@ -6,6 +6,19 @@ export type Position = z.infer<typeof PositionSchema>;
 export const DatasetModeSchema = z.enum(["demo", "statsbomb", "sportmonks", "skillcorner", "wyscout"]);
 export type DatasetMode = z.infer<typeof DatasetModeSchema>;
 
+export const DatasetScopeSchema = z.object({
+  kind: z.enum(["fictional_demo", "historical_sample", "current_limited"]),
+  title: z.string().min(1),
+  summary: z.string().min(1),
+  limitations: z.array(z.string().min(1)),
+  observedCoverage: z.object({
+    playerRecordCount: z.number().int().nonnegative(),
+    competitions: z.array(z.string().min(1)),
+    seasons: z.array(z.string().min(1)),
+  }).optional(),
+});
+export type DatasetScope = z.infer<typeof DatasetScopeSchema>;
+
 export const InPossessionRoleSchema = z.enum(["progression", "retention", "creation"]);
 export type InPossessionRole = z.infer<typeof InPossessionRoleSchema>;
 
@@ -343,6 +356,7 @@ export const RecruitmentReportSchema = z.object({
   limitations: z.array(z.string()),
   dataSource: z.string(),
   datasetMode: DatasetModeSchema,
+  datasetScope: DatasetScopeSchema.optional(),
 });
 export type RecruitmentReport = z.infer<typeof RecruitmentReportSchema>;
 

@@ -72,7 +72,7 @@ TACTISCOUT_STATSBOMB_SEASON_IDS=90
 
 赛事和赛季 ID 只是格式示例，请根据数据集文件选择。StatsBomb Open Data 覆盖部分赛事/赛季，不是完整职业球员数据库，也不能核实当前完整阵容、合同、预算、潜力或身体属性。公开研究时请遵守 [StatsBomb Open Data 使用条款](https://github.com/hudl/open-data)。
 
-Sportmonks 是另一个可选 provider。其当前赛季模式从配置赛季逐页读取球队，再读取各队当前名单和该赛季表现。配置前须确认账户套餐包含目标联赛；免费计划目前只覆盖丹麦超级联赛和苏格兰超级联赛。[官方覆盖与限额](https://docs.sportmonks.com/v3/api/rate-limit)。例如：
+Sportmonks 是另一个可选 provider。其当前赛季模式从配置赛季逐页读取球队，再读取各队当前名单和该赛季表现。配置前须确认账户套餐包含目标联赛。**2026-10-04 核查的公开套餐页**列出 Starter：每月 €29（年付折算 €24/月），可选 5 个联赛，每实体每小时 2,000 次调用；xG 与 Pressure Index 另列为 €29/月起的附加包。页面还提供付费套餐 14 天试用；服务条款说明试用需要有效银行卡，期满前未取消会扣费。较早文档中的免费联赛覆盖信息可能已过时，应以账户当前 entitlement 为准。[套餐与定价](https://www.sportmonks.com/football-api/plans-pricing/) · [服务条款与试用](https://www.sportmonks.com/terms-of-service/)。例如：
 
 ```env
 TACTISCOUT_DATA_MODE=sportmonks
@@ -84,7 +84,7 @@ TACTISCOUT_SPORTMONKS_AI_PROCESSING_ALLOWED=false
 
 `TACTISCOUT_SPORTMONKS_COVERED_STATISTIC_TYPE_IDS` 必须按你的 Sportmonks 账户、联赛和订阅确认后填写；空值或未确认的指标不会被当作套餐已覆盖。当前映射支持 52 进球、79 助攻、80 传球尝试、81/116 成功传球、78 抢断、100 拦截、119 出场分钟和 122 长球。缺少某项覆盖配置时，该项不会参与球员评估；分钟字段必须确认可用。API v3 在统计明细中没有返回某个已确认覆盖的计数时按零处理。
 
-`SPORTMONKS_API_TOKEN` 只由 Fastify 服务端读取。启动 Sportmonks 模式前，必须把 `TACTISCOUT_SPORTMONKS_AI_PROCESSING_ALLOWED` 明确设为 `true`；这表示部署者已核实其账户和条款允许将这些数据交给配置的模型处理。公开条款允许在自有产品中使用数据，但本文核对的条款没有专门说明外部 LLM/embedding 处理；权限未确认时不要开启此选项。[Sportmonks 服务条款](https://www.sportmonks.com/terms-of-service/)。
+`SPORTMONKS_API_TOKEN` 只由 Fastify 服务端读取。启动 Sportmonks 模式前，必须把 `TACTISCOUT_SPORTMONKS_AI_PROCESSING_ALLOWED` 明确设为 `true`；这表示部署者已核实其账户和条款允许将这些数据交给配置的模型处理。公开条款允许在自有产品中存储和展示数据，但本文核对的条款没有专门说明外部 LLM/embedding 处理；权限未确认时不要开启此选项。[Sportmonks 服务条款](https://www.sportmonks.com/terms-of-service/)。
 
 provider 记录保留 Sportmonks 的球员、球队、赛事和赛季 ID，以及取得时间；不同来源 ID 不会按姓名自动合并。单个球员卡会显示数据来源与抓取时间。当前 adapter 只映射进球、助攻、传球、长球、抢断和拦截；不把成功盘带当成带球推进，也不把关键传球当成射门助攻。未覆盖的指标标为暂无数据，不会变成零或参与对应职责的适配计算。[球员统计字段](https://docs.sportmonks.com/v3/definitions/types/statistics/player-statistics)；该 API 不提供 GPS/追踪类距离、冲刺或速度数据。[统计说明](https://docs.sportmonks.com/v3/tutorials-and-guides/tutorials/statistics/players-statistics)。
 
@@ -112,6 +112,8 @@ Wyscout 事件指标映射为：射门事件的标签 101 计进球、标签 301
 ## API
 
 `POST /api/v1/recruitment/cases/:caseId/turns` 接受 `{ "message": "..." }`，返回 `needs_input` 或 `completed`。追问回答使用同一个 `caseId`，以恢复同一 LangGraph 案件。
+
+工作台和生成的报告会标出数据范围：虚构演示、历史比赛/聚合样本，或 Sportmonks 账号许可范围内的当前赛季球员池。报告还会列出本次已加载的球员记录数及实际出现的赛事/赛季；拿不到完整清单时会明确标为未知。历史数据不会被描述成现役阵容；Sportmonks 候选范围仅限服务器配置且账户已开通的赛事与赛季，真实账号覆盖尚未验证时仍需人工核对。
 
 `GET /api/v1/dataset` 返回当前数据模式；`GET /api/v1/knowledge/status` 返回本地索引与许可登记的统计；`/api/v1/player-observations` 提供第一方观察记录的本地 CRUD；`GET /health` 返回服务状态。旧版一次性 `/api/v1/scout` 和 `/api/v1/requirements/parse` 暂时保留，以兼容已有调用。
 
