@@ -9,7 +9,7 @@ import {
   type ScoutInput,
   type ScoutResponse,
 } from "../domain/schemas.js";
-import { createRepository, filterEligiblePlayers, type PlayerRepository } from "../data/provider.js";
+import { createRepository, filterEligiblePlayers, loadAllPlayers, type PlayerRepository } from "../data/provider.js";
 import { assessRoles, averageFit, explainFit, toPer90 } from "./scoring.js";
 import { parseRequirements } from "./requirements.js";
 
@@ -43,6 +43,9 @@ export function createScoutRunner(repo: PlayerRepository): (input: ScoutInput) =
   return async (input) => {
     if (repo.mode === "skillcorner" || repo.mode === "wyscout") {
       throw new Error(`${repo.sourceName} 只用于对话式证据调查；旧版一次性接口不会生成相应的来源限制与历史时间说明。`);
+    }
+    if (!repo.loadPlayers) {
+      throw new Error(`${repo.sourceName} 只支持按需查询；请通过对话式招募案件使用该数据源。`);
     }
     const result = await workflow.invoke({ input: ScoutInputSchema.parse(input) });
     if (!result.report) throw new Error("Report node did not produce an output.");
@@ -81,7 +84,7 @@ function createWorkflow(repo: PlayerRepository) {
     .addNode("parse_requirements", (current: State) => ({ requirements: parseRequirements(current.input) }))
     .addNode("scout_search", async (current: State) => {
       const requirements = current.requirements as Requirements;
-      const players = await repo.loadPlayers();
+      const players = await loadAllPlayers(repo);
       return {
         allPlayers: players,
         candidates: filterEligiblePlayers(players, {
@@ -149,7 +152,7 @@ function createWorkflow(repo: PlayerRepository) {
       return { review: { evidenceCompleteness, evidenceCoverage, findings, retryRecommended: evidenceCompleteness < 0.55 && current.retryCount < 1 } };
     })
     .addNode("refresh_data", async (current: State) => {
-      const players = await repo.loadPlayers(true);
+      const players = await loadAllPlayers(repo, true);
       const requirements = current.requirements as Requirements;
       return {
         allPlayers: players,

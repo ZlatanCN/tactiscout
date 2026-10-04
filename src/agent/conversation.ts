@@ -18,9 +18,10 @@ import {
   type PlayerProfile,
   type RecruitmentReport,
 } from "../domain/schemas.js";
-import { type PlayerRepository } from "../data/provider.js";
+import { inspectTeamPlayers, loadComparisonPlayers, loadPlayersByIds, searchPlayerPage, type PlayerRepository } from "../data/provider.js";
 import { describeDatasetScope } from "../domain/dataset-scope.js";
 import { positionMatches } from "../domain/positions.js";
+import { normalizeSearchText } from "../domain/text-matching.js";
 import { toPer90 } from "./scoring.js";
 import { createLocalKnowledgeBase, type KnowledgeRepository } from "../knowledge/index.js";
 import type { KnowledgeSearchResult } from "../knowledge/schemas.js";
@@ -43,7 +44,6 @@ import {
   type EvaluatedCandidate,
   type RecruitmentDecisionConstraints,
 } from "./conclusion-policy.js";
-import { normalizeSearchText } from "./text-matching.js";
 import { extractExplicitTargetTeam } from "./target-team-context.js";
 
 export { type RecruitmentAction } from "./recruitment-actions.js";
@@ -116,7 +116,8 @@ const agentInstructions = [
   "若数据模式为 SkillCorner Open Data，球员指标来自 2024/25 澳大利亚 A-League 历史样例，不能描述为当前球员市场或欧洲联赛候选池。只引用 evaluate_candidates 工具返回的补充指标；保留原指标口径、单位、场次和来源字段，不自行把跑动/传球指标转换成评分或潜力结论。",
   "若数据模式为 StatsBomb Open Data，球员与比赛指标只对应实际读取到的赛事/赛季历史样本。非点球 xG 指标是将 StatsBomb 每次射门的 shot.statsbomb_xg 按非点球射门和实际分钟聚合的派生统计；它表示机会数量/质量，不代表射门终结能力或未来进球。只引用 evaluate_candidates 返回且样本覆盖完整的指标；保留非点球口径、样本场次/分钟/射门数和 StatsBomb 来源，不把缺失数据说成 0。",
   "若数据模式为 Wyscout Open Data，球员、球队、年龄和统计只对应 2017/18 历史比赛样本，不是现役球员池。不要据此断言当前俱乐部、当前年龄、转会可行性或未来能力；只引用 evaluate_candidates 返回的指标。助攻标签 301、关键传球标签 302 是不同指标，关键传球不是射门助攻；当前数据不支持射门助攻。‘渐进传球（推算）’和‘渐进传球成功率（推算）’是 TactiScout 根据方向坐标、105 米场地长度假设和 Wyscout 阈值计算的估计值，不是 Wyscout 直接提供的指标；仅在坐标及成功/失败标签完整时可用。‘地面防守对抗 /90’计 Ground defending duel 子事件，‘明确胜出占比’按标签 703 计算且包含 701 明确失利和 702 中性结果；这是较简单的事件分类，不能改称通常意义的对抗胜率、抢断成功率或夺回球权次数。出场分钟由首发阵容与换人分钟估算，不含补时且未校正红牌等特殊情况。报告须保留历史范围、指标口径和 CC BY 4.0 来源。",
-  "search_candidates 是发现工具，不按能力排序。默认保留所有出场样本；不要静默设置最低分钟数，除非用户明确提出样本门槛。结果按数据仓库顺序分页；如果还没有足够多样的候选，使用 nextOffset 继续搜索后再挑选评估对象。",
+  "search_candidates 是向当前数据源发起的发现查询，不按能力排序。默认保留所有出场样本；不要静默设置最低分钟数，除非用户明确提出样本门槛。结果按来源返回的分页游标继续查询后再挑选评估对象。如果 matchingRecords 为 null，表示来源未提供精确匹配总数，不能解释成零命中或完整市场；只能依据 nextOffset 判断是否还有下一页。",
+  "如果候选搜索工具返回错误或提示某个明确条件未被来源应用，不能把错误当成空名单，也不能推荐不满足该条件的球员；应说明数据源无法核实/执行该条件，再判断是否有其他可用查询或需要用户调整需求。",
   "位置只能按用户明确指定的细分角色收窄。用户只说泛称‘中场’、‘后卫’、‘前锋’或‘能踢中场’时，不要自行推断成 CM、AM 等单一子位置；search_candidates.position 必须为 null，先广泛发现候选，再依据主位置和能力证据决定深入评估谁。只有用户明确说后腰、中前卫、前腰等具体角色时，才用单一位置作为硬筛选。",
   "当用户要求寻找某名球员的‘替代者/接班人/替补’时，将该球员作为参考画像，不把他当作候选过滤条件。search_candidates.playerName 只用于核验球员报告新发现的候选人；绝不能用参考球员姓名筛选候选池。当前没有单独的参考球员档案工具，因此不能假装已核验参考球员的现役球队、联赛或详细数据。若用户没有说明具体场上角色，先完成方法资料和一次宽范围候选检索，再问一个聚焦角色的问题；回答前不得直接完成推荐。",
   "参考球员在本地数据中查不到，不等于用户需求不清楚，也不得因此要求用户确认球员身份或是否跨联赛搜索。用户已明确说‘前锋’等宽泛位置时，先按这个位置广泛发现候选人；只有用户自己提出年龄、预算、联赛或赛季偏好时，才将它们作为限制或追问。现有工具只提供历史比赛样本，不提供球员现役俱乐部、当前联赛或完整现役名单；禁止凭模型记忆断言这些事实，也不要把目标球队所属联赛当作候选球员的搜索范围。",
@@ -435,6 +436,10 @@ const RecruitmentState = Annotation.Root({
     reducer: (previous, update) => ({ ...previous, ...update }),
     default: () => ({}),
   }),
+  observedRecords: Annotation<Record<string, { competition: string; season: string }>>({
+    reducer: (previous, update) => ({ ...previous, ...update }),
+    default: () => ({}),
+  }),
   evaluatedPlayers: Annotation<Record<string, EvaluatedPlayer>>({
     reducer: (previous, update) => ({ ...previous, ...update }),
     default: () => ({}),
@@ -482,6 +487,19 @@ type State = typeof RecruitmentState.State;
 type CandidateSearchAction = Extract<ParsedRecruitmentAction, { action: "search_candidates" }>;
 const maxDecisionsPerTurn = 10;
 const threadTurnTails = new Map<string, Promise<void>>();
+
+function sourcePlayerKey(player: PlayerProfile): string {
+  const identity = player.sourceIdentity;
+  return identity
+    ? [identity.provider, identity.playerId, identity.teamId ?? "", identity.competitionId ?? "", identity.seasonId ?? ""].join(":")
+    : player.playerId;
+}
+
+function providerErrorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== "object" || !("code" in error)) return undefined;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" ? code : undefined;
+}
 
 function candidateSearchScopeKey(action: CandidateSearchAction): string {
   return JSON.stringify({
@@ -674,34 +692,6 @@ function teamHistory(players: PlayerProfile[], teamName: string) {
   };
 }
 
-function candidateSearch(players: PlayerProfile[], action: Extract<ParsedRecruitmentAction, { action: "search_candidates" }>) {
-  const matching = players.filter((player) => {
-    if (action.playerName && !normalizeSearchText(player.name).includes(normalizeSearchText(action.playerName))) return false;
-    if (action.position && !positionMatches(player.position, action.position)) return false;
-    if (player.minutes < action.minimumMinutes) return false;
-    if (action.maxAge !== null && (player.age === null || player.age > action.maxAge)) return false;
-    if (action.competition && !normalizeSearchText(player.competition).includes(normalizeSearchText(action.competition))) return false;
-    if (action.season && !normalizeSearchText(player.season).includes(normalizeSearchText(action.season))) return false;
-    return true;
-  });
-  const page = matching.slice(action.offset, action.offset + action.limit);
-  return {
-    matchingRecords: matching.length,
-    offset: action.offset,
-    nextOffset: action.offset + page.length < matching.length ? action.offset + page.length : null,
-    candidates: page.map((player) => ({
-      playerId: player.playerId,
-      name: player.name,
-      team: player.team,
-      position: player.position,
-      age: player.age,
-      competition: player.competition,
-      season: player.season,
-      minutes: player.minutes,
-    })),
-  };
-}
-
 function metricValue(player: PlayerProfile, key: CapabilityMetricKey): number | undefined {
   const supplementary = player.supplementaryMetrics?.find((metric) => metric.key === key);
   if (supplementary) return supplementary.value ?? undefined;
@@ -717,18 +707,27 @@ function metricDefinitionsFor(player: PlayerProfile): Array<{ key: CapabilityMet
   return definitions;
 }
 
+interface PlayerEvaluationBatch {
+  evaluations: Record<string, EvaluatedPlayer>;
+  observedPlayers: PlayerProfile[];
+}
+
 async function evaluatePlayers(
   players: PlayerProfile[],
   requestedIds: string[],
   repository: PlayerRepository,
-): Promise<Record<string, EvaluatedPlayer>> {
-  const allPlayers = await repository.loadPlayers();
+): Promise<PlayerEvaluationBatch> {
+  const requestedPlayers = await loadPlayersByIds(repository, requestedIds);
+  const eligibleIds = new Set(players.map((player) => player.playerId));
   const selected = requestedIds.flatMap((id) => {
-    const player = players.find((candidate) => candidate.playerId === id);
+    if (!eligibleIds.has(id)) return [];
+    const player = requestedPlayers.find((candidate) => candidate.playerId === id);
     return player ? [player] : [];
   });
-  return Object.fromEntries(selected.map((player) => {
-    const peers = allPlayers.filter((candidate) => candidate.eventDataComplete !== false
+  const comparisonPlayers = await loadComparisonPlayers(repository, selected);
+  const peerPool = [...new Map([...selected, ...comparisonPlayers].map((player) => [sourcePlayerKey(player), player])).values()];
+  const evaluations = Object.fromEntries(selected.map((player) => {
+    const peers = peerPool.filter((candidate) => candidate.eventDataComplete !== false
       && candidate.position === player.position
       && candidate.competition === player.competition
       && candidate.season === player.season
@@ -765,6 +764,7 @@ async function evaluatePlayers(
     });
     return [player.playerId, { player, evidence }];
   }));
+  return { evaluations, observedPlayers: peerPool };
 }
 
 function evidenceText(item: CapabilityEvidence): string {
@@ -1172,8 +1172,13 @@ export function createRecruitmentConversation(input: {
         }
         if (action.action === "inspect_team") {
           filters = { teamName: action.teamName };
-          const players = await repository.loadPlayers();
+          const players = await inspectTeamPlayers(repository, action.teamName);
           const result = teamHistory(players, action.teamName);
+          const observed = Object.fromEntries(players.map((player) => [sourcePlayerKey(player), {
+            competition: player.competition,
+            season: player.season,
+          }]));
+          const observedRecords = { ...state.observedRecords, ...observed };
           observer?.({
             phase: "tool",
             toolName: action.action,
@@ -1185,7 +1190,8 @@ export function createRecruitmentConversation(input: {
           });
           return {
             toolUses,
-            datasetScope: describeDatasetScope(repository.mode, players),
+            observedRecords: observed,
+            datasetScope: describeDatasetScope(repository.mode, Object.values(observedRecords)),
             targetTeam: action.teamName,
             hasInvestigated: true,
             history: [{ role: "tool" as const, toolName: action.action, content: JSON.stringify(result) }],
@@ -1205,32 +1211,52 @@ export function createRecruitmentConversation(input: {
             limit: action.limit,
             playerNameFilterUsed: Boolean(action.playerName),
           };
-          const players = await repository.loadPlayers();
-          const result = candidateSearch(players, action);
+          const result = await searchPlayerPage(repository, {
+            playerName: action.playerName,
+            position: action.position,
+            maxAge: action.maxAge,
+            minimumMinutes: action.minimumMinutes,
+            competition: action.competition,
+            season: action.season,
+            offset: action.offset,
+            limit: action.limit,
+          });
+          const candidateSummaries = result.players.map((player) => ({
+            playerId: player.playerId,
+            name: player.name,
+            team: player.team,
+            position: player.position,
+            age: player.age,
+            competition: player.competition,
+            season: player.season,
+            minutes: player.minutes,
+          }));
           filters.nextOffset = result.nextOffset;
-          filters.candidateIds = result.candidates.map((candidate) => candidate.playerId);
+          filters.candidateIds = candidateSummaries.map((candidate) => candidate.playerId);
           observer?.({
             phase: "tool",
             toolName: action.action,
             elapsedMs: Math.round(performance.now() - toolStartedAt),
             ok: true,
             filters,
-            resultCount: result.candidates.length,
-            matchingRecordCount: result.matchingRecords,
+            resultCount: candidateSummaries.length,
+            ...(result.totalRecords === null ? {} : { matchingRecordCount: result.totalRecords }),
           });
-          const pageIds = result.candidates.map((candidate) => candidate.playerId);
-          const additions = Object.fromEntries(pageIds.flatMap((id) => {
-            const player = players.find((candidate) => candidate.playerId === id);
-            return player ? [[id, player]] : [];
-          }));
+          const additions = Object.fromEntries(result.players.map((player) => [player.playerId, player]));
+          const observed = Object.fromEntries(result.players.map((player) => [sourcePlayerKey(player), {
+            competition: player.competition,
+            season: player.season,
+          }]));
+          const observedRecords = { ...state.observedRecords, ...observed };
           return {
             toolUses,
-            datasetScope: describeDatasetScope(repository.mode, players),
+            datasetScope: describeDatasetScope(repository.mode, Object.values(observedRecords)),
+            observedRecords: observed,
             candidateSearchCursors: { [cursorKey]: result.nextOffset },
             discoveredPlayers: additions,
             hasInvestigated: true,
             ...(state.confirmedPosition && action.position === state.confirmedPosition
-              ? { confirmedPositionSearchMatchCount: result.matchingRecords }
+              ? { confirmedPositionSearchMatchCount: result.totalRecords }
               : {}),
             searchScopes: [RecruitmentSearchScopeSchema.parse({
               position: action.position,
@@ -1245,16 +1271,23 @@ export function createRecruitmentConversation(input: {
                 : "agent_interpreted",
             })],
             history: [{ role: "tool" as const, toolName: action.action, content: JSON.stringify({
-              ...result,
+              candidates: candidateSummaries,
+              matchingRecords: result.totalRecords,
+              matchingRecordCountKnown: result.totalRecords !== null,
+              appliedFilters: result.appliedFilters,
+              offset: result.offset,
+              nextOffset: result.nextOffset,
               requestedOffset,
               paginationNote: result.nextOffset === null
                 ? "当前筛选已到最后一页。请评估已经发现的候选人，或在用户允许时调整筛选；不要重复读取此页。"
-                : `本次实际读取 offset=${action.offset}。若需要更多候选，下一页必须使用返回的 nextOffset=${result.nextOffset}，不要重复或跳过页码。`,
+                : `本次实际读取 offset=${result.offset}。若需要更多候选，下一页必须使用返回的 nextOffset=${result.nextOffset}，不要重复或跳过页码。`,
+              ...(result.totalRecords === null ? { totalCountNote: "数据源未提供精确匹配总数；matchingRecords 为 null，不代表没有其他匹配球员。" } : {}),
             }) }],
           };
         }
         filters = { requestedPlayerCount: action.playerIds.length };
-          const result = await evaluatePlayers(discoveredPlayersForConstraint(state), action.playerIds, repository);
+        const evaluationBatch = await evaluatePlayers(discoveredPlayersForConstraint(state), action.playerIds, repository);
+        const result = evaluationBatch.evaluations;
         filters.evaluatedPlayerIds = Object.keys(result);
         observer?.({
           phase: "tool",
@@ -1279,9 +1312,16 @@ export function createRecruitmentConversation(input: {
           missingPlayerIds: missing,
           note: "只返回可观察比赛产出。缺失事件文件时不会把动作记为零；没有传球尝试时省略传球成功率。百分位仅在同位置、同赛事、同赛季至少 5 个完整样本时提供。",
         };
+        const observed = Object.fromEntries(evaluationBatch.observedPlayers.map((player) => [sourcePlayerKey(player), {
+          competition: player.competition,
+          season: player.season,
+        }]));
+        const observedRecords = { ...state.observedRecords, ...observed };
         return {
           toolUses,
           evaluatedPlayers: result,
+          observedRecords: observed,
+          datasetScope: describeDatasetScope(repository.mode, Object.values(observedRecords)),
           hasInvestigated: true,
           history: [{ role: "tool" as const, toolName: action.action, content: JSON.stringify(toolResult) }],
         };
@@ -1293,15 +1333,18 @@ export function createRecruitmentConversation(input: {
           ok: false,
           filters,
           resultCount: 0,
-          ...(action.action === "search_candidates" ? { matchingRecordCount: 0 } : {}),
         });
         const message = error instanceof Error ? error.message : "数据工具调用失败。";
+        const code = providerErrorCode(error);
         return {
           toolUses,
           hasInvestigated: true,
           ...(action.action === "search_methodology" ? { hasSearchedMethodology: true, methodologySearchFailed: true } : {}),
           ...(action.action === "search_player_reports" ? { hasSearchedPlayerReports: true, playerReportSearchFailed: true } : {}),
-          history: [{ role: "tool" as const, toolName: action.action, content: JSON.stringify({ error: message }) }],
+          history: [{ role: "tool" as const, toolName: action.action, content: JSON.stringify({
+            error: message,
+            ...(code ? { errorCode: code } : {}),
+          }) }],
         };
       }
     })

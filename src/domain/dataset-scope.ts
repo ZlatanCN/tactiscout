@@ -33,7 +33,10 @@ const datasetScopes: Record<DatasetMode, DatasetScope> = {
   },
 };
 
-export function describeDatasetScope(mode: DatasetMode, players?: readonly PlayerProfile[]): DatasetScope {
+export function describeDatasetScope(
+  mode: DatasetMode,
+  players?: readonly Pick<PlayerProfile, "competition" | "season">[],
+): DatasetScope {
   const scope = datasetScopes[mode];
   const observedCoverage = players ? {
     playerRecordCount: players.length,

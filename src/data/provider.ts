@@ -11,6 +11,7 @@ import {
   type SupplementaryPerformanceMetric,
 } from "../domain/schemas.js";
 import { positionMatches } from "../domain/positions.js";
+import { normalizeSearchText } from "../domain/text-matching.js";
 import { SportmonksPlayerRepository, SportmonksProviderError } from "./sportmonks-provider.js";
 import { SkillCornerPlayerRepository } from "./skillcorner-provider.js";
 import { WyscoutPlayerRepository } from "./wyscout-provider.js";
@@ -21,8 +22,40 @@ const demoFile = path.join(projectRoot, "data", "demo-players.json");
 export interface PlayerRepository {
   readonly mode: DatasetMode;
   readonly sourceName: string;
-  loadPlayers(refresh?: boolean): Promise<PlayerProfile[]>;
+  loadPlayers?(refresh?: boolean): Promise<PlayerProfile[]>;
+  searchCandidates?(query: PlayerSearchQuery): Promise<PlayerSearchPage>;
+  inspectTeam?(teamName: string): Promise<PlayerProfile[]>;
+  getPlayersByIds?(playerIds: readonly string[]): Promise<PlayerProfile[]>;
+  getComparisonPlayers?(players: readonly PlayerProfile[]): Promise<PlayerProfile[]>;
 }
+
+export async function loadAllPlayers(repository: PlayerRepository, refresh = false): Promise<PlayerProfile[]> {
+  if (!repository.loadPlayers) {
+    throw new Error(`${repository.sourceName} supports scoped queries but does not expose a full-catalog load.`);
+  }
+  return repository.loadPlayers(refresh);
+}
+
+export interface PlayerSearchQuery {
+  playerName: string | null;
+  position: Position | null;
+  maxAge: number | null;
+  minimumMinutes: number;
+  competition: string | null;
+  season: string | null;
+  offset: number;
+  limit: number;
+}
+
+export interface PlayerSearchPage {
+  players: PlayerProfile[];
+  totalRecords: number | null;
+  offset: number;
+  nextOffset: number | null;
+  appliedFilters: PlayerSearchFilter[];
+}
+
+export type PlayerSearchFilter = "playerName" | "position" | "maxAge" | "minimumMinutes" | "competition" | "season";
 
 interface DemoDataset {
   source: string;
@@ -440,12 +473,138 @@ export class StatsBombRepository implements PlayerRepository {
   }
 }
 
+function matchesPlayerSearch(player: PlayerProfile, query: PlayerSearchQuery): boolean {
+  if (query.playerName && !normalizeSearchText(player.name).includes(normalizeSearchText(query.playerName))) return false;
+  if (query.position && !positionMatches(player.position, query.position)) return false;
+  if (player.minutes < query.minimumMinutes) return false;
+  if (query.maxAge !== null && (player.age === null || player.age > query.maxAge)) return false;
+  if (query.competition && !normalizeSearchText(player.competition).includes(normalizeSearchText(query.competition))) return false;
+  if (query.season && !normalizeSearchText(player.season).includes(normalizeSearchText(query.season))) return false;
+  return true;
+}
+
+function searchLoadedPlayers(players: readonly PlayerProfile[], query: PlayerSearchQuery): PlayerSearchPage {
+  const matching = players.filter((player) => matchesPlayerSearch(player, query));
+  const page = matching.slice(query.offset, query.offset + query.limit);
+  const appliedFilters: PlayerSearchFilter[] = [];
+  if (query.playerName) appliedFilters.push("playerName");
+  if (query.position) appliedFilters.push("position");
+  if (query.maxAge !== null) appliedFilters.push("maxAge");
+  if (query.minimumMinutes > 0) appliedFilters.push("minimumMinutes");
+  if (query.competition) appliedFilters.push("competition");
+  if (query.season) appliedFilters.push("season");
+  return {
+    players: page,
+    totalRecords: matching.length,
+    offset: query.offset,
+    nextOffset: query.offset + page.length < matching.length ? query.offset + page.length : null,
+    appliedFilters,
+  };
+}
+
+function withLocalQueries(repository: PlayerRepository): PlayerRepository {
+  return {
+    mode: repository.mode,
+    sourceName: repository.sourceName,
+    ...(repository.loadPlayers ? { loadPlayers: (refresh?: boolean) => repository.loadPlayers!(refresh) } : {}),
+    searchCandidates: async (query) => repository.searchCandidates
+      ? repository.searchCandidates(query)
+      : searchLoadedPlayers(await loadAllPlayers(repository), query),
+    inspectTeam: async (teamName) => {
+      if (repository.inspectTeam) return repository.inspectTeam(teamName);
+      const key = normalizeSearchText(teamName);
+      const players = await loadAllPlayers(repository);
+      return players.filter((player) => {
+        const team = normalizeSearchText(player.team);
+        return team === key || (key.length >= 4 && team.includes(key)) || (team.length >= 4 && key.includes(team));
+      });
+    },
+    getPlayersByIds: async (playerIds) => {
+      if (repository.getPlayersByIds) return repository.getPlayersByIds(playerIds);
+      const wanted = new Set(playerIds);
+      return (await loadAllPlayers(repository)).filter((player) => wanted.has(player.playerId));
+    },
+    getComparisonPlayers: async (players) => repository.getComparisonPlayers
+      ? repository.getComparisonPlayers(players)
+      : loadAllPlayers(repository),
+  };
+}
+
+export async function searchPlayerPage(repository: PlayerRepository, query: PlayerSearchQuery): Promise<PlayerSearchPage> {
+  const page = repository.searchCandidates
+    ? repository.searchCandidates(query)
+    : searchLoadedPlayers(await loadAllPlayers(repository), query);
+  const result = await page;
+  if (result.offset !== query.offset) {
+    throw new Error(`Player source returned offset ${result.offset} for requested offset ${query.offset}.`);
+  }
+  if (result.players.length > query.limit) {
+    throw new Error(`Player source returned ${result.players.length} records for a page limit of ${query.limit}.`);
+  }
+  if (result.totalRecords !== null && (!Number.isInteger(result.totalRecords) || result.totalRecords < 0)) {
+    throw new Error("Player source returned an invalid matching-record count.");
+  }
+  if (new Set(result.players.map((player) => player.playerId)).size !== result.players.length) {
+    throw new Error("Player source returned duplicate player IDs within one candidate page.");
+  }
+  const requiredFilters: PlayerSearchFilter[] = [];
+  if (query.playerName) requiredFilters.push("playerName");
+  if (query.position) requiredFilters.push("position");
+  if (query.maxAge !== null) requiredFilters.push("maxAge");
+  if (query.minimumMinutes > 0) requiredFilters.push("minimumMinutes");
+  if (query.competition) requiredFilters.push("competition");
+  if (query.season) requiredFilters.push("season");
+  const unapplied = requiredFilters.filter((filter) => !result.appliedFilters.includes(filter));
+  if (unapplied.length) {
+    throw new Error(`Player source could not apply requested search filter${unapplied.length === 1 ? "" : "s"}: ${unapplied.join(", ")}.`);
+  }
+  if (result.players.some((player) => !matchesPlayerSearch(player, query))) {
+    throw new Error("Player source returned a candidate that does not satisfy the requested search filters.");
+  }
+  const expectedNextOffset = query.offset + result.players.length;
+  if (result.nextOffset !== null && (result.players.length === 0 || result.nextOffset !== expectedNextOffset)) {
+    throw new Error("Player source returned a non-contiguous candidate-page cursor.");
+  }
+  if (result.totalRecords !== null && result.players.length > 0) {
+    if (result.totalRecords < expectedNextOffset) {
+      throw new Error("Player source returned fewer total records than this candidate page contains.");
+    }
+    const moreRecordsRemain = expectedNextOffset < result.totalRecords;
+    if (moreRecordsRemain !== (result.nextOffset !== null)) {
+      throw new Error("Player source returned a next-page cursor inconsistent with its matching-record count.");
+    }
+  }
+  return result;
+}
+
+export async function inspectTeamPlayers(repository: PlayerRepository, teamName: string): Promise<PlayerProfile[]> {
+  if (repository.inspectTeam) return repository.inspectTeam(teamName);
+  const key = normalizeSearchText(teamName);
+  return (await loadAllPlayers(repository)).filter((player) => {
+    const team = normalizeSearchText(player.team);
+    return team === key || (key.length >= 4 && team.includes(key)) || (team.length >= 4 && key.includes(team));
+  });
+}
+
+export async function loadPlayersByIds(repository: PlayerRepository, playerIds: readonly string[]): Promise<PlayerProfile[]> {
+  if (repository.getPlayersByIds) return repository.getPlayersByIds(playerIds);
+  const wanted = new Set(playerIds);
+  return (await loadAllPlayers(repository)).filter((player) => wanted.has(player.playerId));
+}
+
+export async function loadComparisonPlayers(repository: PlayerRepository, players: readonly PlayerProfile[]): Promise<PlayerProfile[]> {
+  if (players.length === 0) return [];
+  return repository.getComparisonPlayers
+    ? repository.getComparisonPlayers(players)
+    : loadAllPlayers(repository);
+}
+
 export function createRepository(): PlayerRepository {
   const mode = (process.env.TACTISCOUT_DATA_MODE ?? "demo").trim().toLowerCase();
   if (mode === "statsbomb") {
-    return new StatsBombRepository();
+    return withLocalQueries(new StatsBombRepository());
   }
-  if (mode === "demo") return new DemoPlayerRepository();
+  if (mode === "demo") return withLocalQueries(new DemoPlayerRepository());
   if (mode === "sportmonks") {
     const cacheLifetimeText = process.env.TACTISCOUT_SPORTMONKS_CACHE_TTL_MS;
     const cacheTtlMs = cacheLifetimeText === undefined || cacheLifetimeText.trim() === ""
@@ -454,7 +613,7 @@ export function createRepository(): PlayerRepository {
     if (cacheLifetimeText !== undefined && cacheLifetimeText.trim() !== "" && !Number.isFinite(cacheTtlMs)) {
       throw new SportmonksProviderError("invalid_configuration", "TACTISCOUT_SPORTMONKS_CACHE_TTL_MS must be a non-negative number of milliseconds.");
     }
-    return new SportmonksPlayerRepository({
+    return withLocalQueries(new SportmonksPlayerRepository({
       token: process.env.SPORTMONKS_API_TOKEN ?? "",
       seasonIds: (process.env.TACTISCOUT_SPORTMONKS_SEASON_IDS ?? "").split(","),
       coveredStatisticTypeIds: (process.env.TACTISCOUT_SPORTMONKS_COVERED_STATISTIC_TYPE_IDS ?? "")
@@ -464,19 +623,19 @@ export function createRepository(): PlayerRepository {
         .map(Number),
       allowModelProcessing: process.env.TACTISCOUT_SPORTMONKS_AI_PROCESSING_ALLOWED === "true",
       ...(cacheTtlMs === undefined ? {} : { cacheTtlMs }),
-    });
+    }));
   }
   if (mode === "skillcorner") {
-    return new SkillCornerPlayerRepository({
+    return withLocalQueries(new SkillCornerPlayerRepository({
       aggregatesDirectory: process.env.TACTISCOUT_SKILLCORNER_AGGREGATES_DIR
         ?? path.join(projectRoot, ".data", "skillcorner-open-data", "aggregates"),
       allowLocalStorage: process.env.TACTISCOUT_SKILLCORNER_LOCAL_STORAGE_ALLOWED === "true",
       allowModelProcessing: process.env.TACTISCOUT_SKILLCORNER_AI_PROCESSING_ALLOWED === "true",
       allowReportDisplay: process.env.TACTISCOUT_SKILLCORNER_REPORT_DISPLAY_ALLOWED === "true",
-    });
+    }));
   }
   if (mode === "wyscout") {
-    return new WyscoutPlayerRepository({
+    return withLocalQueries(new WyscoutPlayerRepository({
       dataDirectory: process.env.TACTISCOUT_WYSCOUT_DIR
         ?? path.join(projectRoot, ".data", "wyscout-open-data"),
       allowModelProcessing: process.env.TACTISCOUT_WYSCOUT_AI_PROCESSING_ALLOWED === "true",
@@ -484,7 +643,7 @@ export function createRepository(): PlayerRepository {
         .split(",")
         .map((value) => value.trim())
         .filter(Boolean),
-    });
+    }));
   }
   throw new SportmonksProviderError("invalid_configuration", `Unknown TACTISCOUT_DATA_MODE: ${mode}.`);
 }

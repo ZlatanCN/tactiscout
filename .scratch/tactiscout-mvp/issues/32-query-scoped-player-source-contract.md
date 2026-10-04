@@ -16,7 +16,7 @@ Labels: ready-for-agent
 
 ## Scope
 
-- 定义稳定的按需查询接口，至少覆盖按球队调查、候选页搜索和按来源 ID 取得评估资料。
+- 定义稳定的按需查询接口，至少覆盖按球队调查、候选页搜索、按来源 ID 取得评估资料，以及按赛事/赛季/位置取同组比较样本。
 - 离线 StatsBomb、Wyscout、SkillCorner 和虚构 demo 仓库继续使用本地数据实现该接口。
 - LangGraph 继续负责选择是否调用哪个数据工具；适配器只执行结构化查询，不替 Agent 做推荐决策。
 - 远端分页不得跳页或隐藏候选；如果 provider 不返回精确总数，结果需显式标记总数未知，不能虚报零命中或完整数据范围。
@@ -25,10 +25,10 @@ Labels: ready-for-agent
 
 ## Acceptance criteria
 
-- [ ] LangGraph 数据工具通过查询契约访问数据，离线仓库保持相同行为。
-- [ ] 候选搜索的请求条件、offset/limit、返回游标、匹配数或未知状态均可审计。
-- [ ] 候选评估只为已发现并请求的来源 ID 加载证据，不隐式读入整个远端目录。
-- [ ] 报告中的数据范围反映实际查询结果；不会把一次 provider 页响应描述成完整市场。
+- [x] 对话式 LangGraph 数据工具通过查询契约访问数据；现有离线仓库继续通过本地数据适配保持原有筛选行为。
+- [x] 候选搜索的请求条件、offset/limit、返回游标、已应用筛选和匹配数是否已知均可审计；数据源若未应用硬条件或返回不连续分页，结果会报错而不会进入名单。
+- [x] 候选评估按已发现来源 ID 取得档案，并单独请求同位置、同赛事、同赛季的比较样本；query-only provider 无需提供全库读取方法。
+- [x] 报告数据范围按本案实际读取到的球员身份、赛事和赛季累计；checkpoint 只保留该范围摘要，不复制完整球员记录。
 - [ ] 在线 adapter 的凭据只在服务端；默认不允许来源数据进入 Agent 模型上下文或用户报告，直到对应处理/展示权限被明确启用。
 - [ ] PlayerElo 免费 key、报告展示、本地 Ollama 处理和缓存/保留条件完成核实后，才执行真实 API smoke；记录脱敏结果，不保存 key 或完整原始响应。
 
@@ -44,7 +44,8 @@ Labels: ready-for-agent
 
 - 2026-10-04：基于新增数据源调查和现有 Agent 代码检查认领。当前全库 `loadPlayers()` 适合本地数据，却会让在线 provider 的 API 使用与 Agent 分页脱节；先加深真实的数据源接口，再接外部评分源。
 - 2026-10-04：新增 `PlayerEloClient` 只读底座：支持按姓名/联赛分页、按来源 ID 读取档案与评分历史；请求带超时并区分鉴权、限流、网络和响应错误，不缓存、不落盘，也不暴露 transfer-fit、prospect-score 或 market-value endpoint。模型处理与报告展示权限都未显式确认时构造失败。此 client 尚未接入 Agent；当前 LangGraph 工作流仍通过 `loadPlayers()` 全量加载，因此在线接入前仍须完成本 issue 的按需查询契约。
+- 2026-10-04：对话图已改用 `searchCandidates`、`inspectTeam`、`getPlayersByIds` 和 `getComparisonPlayers` 四个按需入口；`loadPlayers` 可选，只有离线兼容适配器才以它作为默认实现。候选页校验来源实际执行的筛选、精确/未知总数、ID 唯一性和连续游标；来源失败不填成零匹配。调查范围累计真实读取记录的身份、赛事和赛季摘要，不把完整球员档案复制到 checkpoint。TypeScript build 通过；没有运行测试。PlayerElo 尚未接入，真实授权、key 和 smoke 仍未完成。
 
 ## Answer
 
-进行中。PlayerElo API 的只读客户端已具备基本请求、分页与失败边界，但没有绑定环境变量或触发线上请求。按需查询接口和本地适配尚未完成；PlayerElo 的公开展示、缓存/保留及本地 Ollama 处理权利也仍待明确，因此不能把它描述成已接入的候选数据源。
+进行中。查询契约已进入对话 Agent，离线适配可继续使用现有数据。本地只读 PlayerElo client 尚未接入该契约或配置 key；公开展示、缓存/保留及本地 Ollama 处理权利也仍待明确，因此不能把它描述成已接入的候选数据源。

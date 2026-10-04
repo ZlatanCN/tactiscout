@@ -13,7 +13,7 @@ import {
   FinishActionSchema,
   type ParsedRecruitmentAction,
 } from "./recruitment-actions.js";
-import { normalizeSearchText } from "./text-matching.js";
+import { normalizeSearchText } from "../domain/text-matching.js";
 
 export interface EvaluatedCandidate {
   player: PlayerProfile;
