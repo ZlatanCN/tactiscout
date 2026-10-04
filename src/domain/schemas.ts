@@ -334,7 +334,9 @@ export const PlayerEloSignalSchema = z.object({
   currentTeam: z.string().nullable(),
   currentLeague: z.string().nullable(),
   position: z.string().nullable(),
-  identityMatch: z.literal("unique_normalized_name"),
+  identityMatch: z.literal("exact_provider_id"),
+  identitySourceProvider: z.string().min(1),
+  identitySourcePlayerId: z.string().min(1),
   retrievedAt: z.string().datetime(),
 });
 export type PlayerEloSignal = z.infer<typeof PlayerEloSignalSchema>;
@@ -342,6 +344,7 @@ export type PlayerEloSignal = z.infer<typeof PlayerEloSignalSchema>;
 export const ExternalSignalCoverageSchema = z.object({
   status: z.enum(["disabled", "not_run", "complete", "partial", "failed"]),
   disabledReason: z.enum(["api_key_missing", "report_display_not_allowed", "local_retention_not_allowed"]).nullable(),
+  identityUnavailableCandidates: z.number().int().nonnegative(),
   checkedCandidates: z.number().int().nonnegative(),
   matchedCandidates: z.number().int().nonnegative(),
   failedCandidates: z.number().int().nonnegative(),
@@ -463,6 +466,7 @@ export const RecruitmentReportSchema = z.object({
   externalSignalCoverage: ExternalSignalCoverageSchema.default({
     status: "not_run",
     disabledReason: null,
+    identityUnavailableCandidates: 0,
     checkedCandidates: 0,
     matchedCandidates: 0,
     failedCandidates: 0,

@@ -459,6 +459,7 @@ const RecruitmentState = Annotation.Root({
   externalSignalCoverage: replaceable<ExternalSignalCoverage>(() => ({
     status: "not_run",
     disabledReason: null,
+    identityUnavailableCandidates: 0,
     checkedCandidates: 0,
     matchedCandidates: 0,
     failedCandidates: 0,
@@ -891,12 +892,14 @@ export function createRecruitmentConversation(input: {
       status: "disabled",
       disabledReason: playerEloSetup.reason,
       checkedCandidates: 0,
+      identityUnavailableCandidates: 0,
       matchedCandidates: 0,
       failedCandidates: 0,
     }
     : {
       status: "not_run",
       disabledReason: null,
+      identityUnavailableCandidates: 0,
       checkedCandidates: 0,
       matchedCandidates: 0,
       failedCandidates: 0,
@@ -1505,6 +1508,7 @@ export function createRecruitmentConversation(input: {
         externalSignalCoverage: {
           status: result.failedCandidates === 0 ? "complete" : successfulLookups > 0 ? "partial" : "failed",
           disabledReason: null,
+          identityUnavailableCandidates: result.identityUnavailableCandidates,
           checkedCandidates: result.checkedCandidates,
           matchedCandidates: result.matchedCandidates,
           failedCandidates: result.failedCandidates,

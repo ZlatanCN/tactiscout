@@ -5,6 +5,7 @@ import { PlayerEloClient } from "./playerelo-client.js";
 
 export interface PlayerEloEnrichmentResult {
   signalsByPlayerId: Record<string, PlayerEloSignal>;
+  identityUnavailableCandidates: number;
   checkedCandidates: number;
   matchedCandidates: number;
   failedCandidates: number;
@@ -17,11 +18,25 @@ export async function enrichPlayerEloSignals(
 ): Promise<PlayerEloEnrichmentResult> {
   const signalsByPlayerId: Record<string, PlayerEloSignal> = {};
   const lookups = new Map<string, ReturnType<PlayerEloClient["searchPlayers"]>>();
+  let identityUnavailableCandidates = 0;
+  let checkedCandidates = 0;
   let failedCandidates = 0;
 
   for (const player of players) {
+    const sourceIdentity = player.sourceIdentity;
+    const sourceProvider = sourceIdentity?.provider.toLowerCase().replace(/[^a-z0-9]/g, "");
+    // PlayerElo documents player_id as the API-Football ID. Names are only used
+    // to retrieve possible rows; they never establish the cross-provider identity.
+    if (sourceProvider !== "apifootball" || !sourceIdentity?.playerId) {
+      identityUnavailableCandidates += 1;
+      continue;
+    }
     const normalizedName = normalizeSearchText(player.name);
-    if (!normalizedName) continue;
+    if (!normalizedName) {
+      identityUnavailableCandidates += 1;
+      continue;
+    }
+    checkedCandidates += 1;
     let lookup = lookups.get(normalizedName);
     if (!lookup) {
       lookup = client.searchPlayers(player.name, { limit: 100, offset: 0 });
@@ -35,10 +50,8 @@ export async function enrichPlayerEloSignals(
       failedCandidates += 1;
       continue;
     }
-    // The list endpoint does not expose a total count. A full page may hide duplicate identities.
-    if (matches.length >= 100) continue;
     const exactMatches = [...new Map(matches
-      .filter((match) => normalizeSearchText(match.player_name) === normalizedName)
+      .filter((match) => match.player_id === sourceIdentity.playerId)
       .map((match) => [match.player_id, match])).values()];
     if (exactMatches.length !== 1) continue;
 
@@ -52,14 +65,17 @@ export async function enrichPlayerEloSignals(
       currentTeam: match.current_team ?? null,
       currentLeague: match.current_league ?? null,
       position: match.position_group ?? match.position ?? null,
-      identityMatch: "unique_normalized_name",
+      identityMatch: "exact_provider_id",
+      identitySourceProvider: sourceIdentity.provider,
+      identitySourcePlayerId: sourceIdentity.playerId,
       retrievedAt: now().toISOString(),
     };
   }
 
   return {
     signalsByPlayerId,
-    checkedCandidates: players.length,
+    identityUnavailableCandidates,
+    checkedCandidates,
     matchedCandidates: Object.keys(signalsByPlayerId).length,
     failedCandidates,
   };
