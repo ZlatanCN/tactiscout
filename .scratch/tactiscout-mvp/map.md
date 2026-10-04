@@ -19,6 +19,7 @@ Labels: wayfinder:map
 - [新增球员与表现数据源调查](research/additional-player-data-options-2026-10.md)进一步核查 TheSportsDB、Afriskaut、Wikidata、Impect 与 Fantasy Premier League。当前结论：TheSportsDB 可 GO 做有限的只读 roster enrichment 验证，但公开部署应走 $9/月应用计划、能力评分暂 NO-GO、模型处理/缓存保留范围待书面确认；Afriskaut 可作为带署名的本地 2024 青少年事件 benchmark，不能当职业转会池，具名未成年资料的公开/模型处理先确认隐私和参与者授权；FPL 自动抽取 NO-GO。
 - [Wyscout 真实数据 smoke test](research/wyscout-real-data-smoke-2026-10.md)记录对官方 Figshare 文件的本机联调结果：默认五大联赛共 2,682 条历史球员赛季记录，真实文件中的嵌套阵容与哨兵字段已由 adapter 覆盖；源文件哈希和出处保存在 Git 忽略目录。
 - [StatsBomb 射门质量证据调查](research/statsbomb-shot-quality-evidence-2026-10.md)核对官方 schema、事件样例和数据使用协议；建议只在本机派生并展示非点球 xG，缺字段不补零，公开分析前核实协议并附官方 logo。
+- [issue 32：面向按需调查的数据源查询契约](issues/32-query-scoped-player-source-contract.md)：现有 `loadPlayers()` 会把完整数据先读入进程，不适合在线 provider 的分页和请求预算；先让 LangGraph 工具对数据源发出可审计的按需查询，再接 PlayerElo 等在线源。只读 API client 已有基本超时、错误与权限门，但还没有进入 Agent 流程。
 - [issue 31：StatsBomb 非点球 xG 历史表现证据](issues/31-statsbomb-shot-quality-evidence.md)：使用 StatsBomb 原生逐射门 xG 派生球员非点球 xG/90 与 xG/射门，完整度、分母和本机模型处理门槛需可追溯。
 - [issue 28：Wyscout 渐进传球事件派生证据](issues/28-wyscout-progressive-pass-evidence.md)将方向推进指标标为 TactiScout 派生估计，明确 105 米换算假设、坐标与成功标签覆盖门槛；不把它并入既有职责评分。
 - [issue 29：Wyscout 地面防守对抗证据](issues/29-wyscout-defensive-duel-evidence.md)补充按 /90 观察对抗频次与明确胜出标签占比；中性标签保留在分母，不能改称抢断成功率或通常意义的胜率。
@@ -45,6 +46,8 @@ Labels: wayfinder:map
 - 使用 `.scratch/<feature>/` 保存地图、规格和单独的问题文件；本地 triage 标签沿用项目默认值。
 
 ## Decisions-so-far
+- [面向按需调查的数据源查询契约](issues/32-query-scoped-player-source-contract.md)：保留 LangGraph 的工具选择与分页轨迹；provider 只执行结构化检索，远端总数未知时必须如实报告，不能加载全库或将失败伪装成空名单。PlayerElo 的 Elo/EAR 仅作为有来源的整体表现信号，不能替代 TactiScout 自己的战术评估。其只读客户端不缓存、不落盘，也不提供 provider 自己的引援匹配分或估值接口；在线调用和 Agent 暴露仍待按需查询契约与权利核验。
+
 - [把球探调查进度做成可读的阶段时间线](issues/30-readable-investigation-progress.md)：每轮显示实际 LangGraph 阶段事件、重复阶段次数与耗时，不把流程阶段伪装成完成比例或推荐质量。
 
 - [防止候选分页耗尽 Agent 调查预算](issues/26-wyscout-agent-cursor-regression.md)：按搜索范围维护候选游标和评估去重；最终结论采用短提示与证据压缩历史，单次模型请求有界。真实 Wyscout/Qwen 单次验证通过，未验证候选排序准确率。
@@ -94,6 +97,7 @@ Labels: wayfinder:map
 - 如何按实际可用语料整理 RAG/Agent 标注样本、阈值和候选排序的可信评估；缺少球探标注时不宣称客观排序准确率。
 - 当前来源发现只覆盖 PLOS 学术文章；通用网页搜索 provider、最终 embedding 模型和 RAG/Agent 评测阈值仍待验证。
 - 当前球员池的授权数据源、目标联赛覆盖，以及线上缓存/展示/外部 AI 使用范围。Sportmonks 凭据目前未配置；Wyscout 2017/18 公开数据只能支持历史表现分析验证。
+- PlayerElo 免费 API key 与公开展示、本地 Ollama 处理、缓存/保留条件尚待确认；不能在权限未确认时把该 API 接进当前会向模型发送球员证据的调查路径。
 
 ## Out of scope
 
