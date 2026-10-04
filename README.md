@@ -25,6 +25,53 @@ TactiScout 是一个 TypeScript 足球球探研究原型。用户用一句自然
 
 用户可以用可选的可搜索球队选择器补充目标球队。招募计划、对话记录和最近一份完整报告保存在浏览器 `localStorage`，旧版本单次分析计划会迁移成历史报告快照。删除浏览器站点数据会移除本地计划。
 
+## 架构一览
+
+```mermaid
+flowchart LR
+  User[用户] --> Web[React 工作台]
+  Web -->|HTTP| API[Fastify]
+  API --> Turn
+
+  subgraph Graph[LangGraph 招募案件 StateGraph]
+    Turn[记录本轮输入]
+    Decide[模型选择下一步]
+    Tools[结构化球探工具]
+    Review[证据 Reviewer]
+    Wait[interrupt 等待用户补充]
+    Gate{PlayerElo 已配置并获许可？}
+    Elo[可选 PlayerElo 外部信号]
+    Archive[Reep 身份映射与 Wyscout 历史档案]
+    Deliver[生成证据报告]
+    Turn --> Decide
+    Decide -->|调用工具| Tools
+    Tools -->|结构化结果| Decide
+    Decide -->|需要澄清| Wait
+    Wait -->|同一案件恢复| Decide
+    Decide -->|准备结束| Review
+    Review -->|证据不足，重查| Decide
+    Review -->|通过且有推荐| Gate
+    Review -->|无需补充| Deliver
+    Gate -->|是| Elo
+    Gate -->|否| Archive
+    Elo --> Archive
+    Archive --> Deliver
+  end
+
+  Decide <-->|工具决策| Model[OpenAI-compatible 模型 / Ollama]
+  Tools --> Repo[按需查询 PlayerRepository]
+  Repo --> Source[当前配置的数据适配器]
+  Tools --> RAG[权限感知的 RAG]
+  Elo -. report-only .-> PlayerElo[PlayerElo API]
+  Archive -. 默认关闭 · report-only .-> Wyscout[本机历史样本]
+  Deliver --> Report[带来源与限制的报告]
+  Report --> API
+  Graph --> Checkpoint[(SQLite 案件 checkpoint)]
+  Web --> Plans[(浏览器 localStorage 计划与报告快照)]
+```
+
+LangGraph 控制工具选择、结果回流、用户追问恢复、证据复核和复核后的可选补充；数据适配器只按结构化条件取数，指标由确定性代码计算。PlayerElo 和跨来源历史档案只在复核后以默认关闭的 report-only 方式补充，不参与 Agent 评分或推荐排序。
+
 ## 技术结构
 
 - React + TypeScript：自然语言对话、追问输入、证据报告、候选人比较和本地计划。

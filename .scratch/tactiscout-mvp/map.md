@@ -70,6 +70,7 @@ Labels: wayfinder:map
 - [TactiScout 版本化球探数据集](issues/40-tactiscout-owned-scouting-dataset.md)：已完成 Wyscout 2017/18 历史快照的固定版本刷新、来源指纹、确定性派生、质量覆盖与报告追溯。它证明了 TactiScout 自己构建数据产品的管线，不等同于最新球员市场；近季广覆盖数据的许可与能力覆盖仍未解决。
 - [本地 API 连接状态](issues/44-explain-local-api-connection-state.md)：网页会清楚显示正在连接、服务端未连接或状态读取失败；断连时可重试，不再把服务错误显示为数据源未知。
 - [可复现的本地 Ollama 启动说明](issues/45-reproducible-local-ollama-setup.md)：README 给出官方 OpenAI-compatible 地址、占位 key、模型名和历史快照启动步骤，不依赖某台机器的 `.env`。
+- [作品集架构总览](issues/46-portfolio-architecture-overview.md)：README Mermaid 图按实际代码展示 LangGraph 工具循环、同案中断恢复、Reviewer、权限感知检索、数据查询契约及两类本地持久化。
 
 - [把球探调查进度做成可读的阶段时间线](issues/30-readable-investigation-progress.md)：每轮显示实际 LangGraph 阶段事件、重复阶段次数与耗时，不把流程阶段伪装成完成比例或推荐质量。
 
