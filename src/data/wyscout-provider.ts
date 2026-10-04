@@ -7,6 +7,8 @@ import {
   type PlayerProfile,
   type Position,
   type RawStatKey,
+  type SupplementaryMetricKey,
+  type SupplementaryPerformanceMetric,
 } from "../domain/schemas.js";
 import type { PlayerRepository } from "./provider.js";
 
@@ -63,6 +65,9 @@ interface MutablePlayer {
   progressivePassDataComplete: boolean;
   progressivePasses: number;
   completedProgressivePasses: number;
+  defensiveDuelDataComplete: boolean;
+  groundDefensiveDuels: number;
+  clearlyWonGroundDefensiveDuels: number;
 }
 
 export type WyscoutProviderErrorCode = "invalid_configuration" | "missing_file" | "invalid_json" | "invalid_source_data";
@@ -354,6 +359,9 @@ function addMutablePlayer(
     progressivePassDataComplete: true,
     progressivePasses: 0,
     completedProgressivePasses: 0,
+    defensiveDuelDataComplete: true,
+    groundDefensiveDuels: 0,
+    clearlyWonGroundDefensiveDuels: 0,
   };
   players.set(key, value);
   return value;
@@ -436,6 +444,26 @@ function passCoordinates(event: JsonRecord): { startX: number; endX: number } | 
   return { startX, endX };
 }
 
+function supplementaryMetric(
+  profile: MutablePlayer,
+  key: SupplementaryMetricKey,
+  value: number | null,
+  sourceField: string,
+): SupplementaryPerformanceMetric {
+  const definition = SupplementaryCapabilityMetricDefinitions.find((metric) => metric.key === key);
+  if (!definition) throw new Error(`Missing supplementary metric definition for ${key}.`);
+  return {
+    key,
+    definition: definition.definition,
+    value,
+    unit: definition.unit,
+    normalization: definition.normalization,
+    sourceField,
+    sampleMinutes: profile.minutes,
+    sampleMatches: profile.appearanceMatchIds.size,
+  };
+}
+
 function applyEvent(
   event: JsonRecord,
   matchById: Map<string, Match>,
@@ -465,6 +493,7 @@ function applyEvent(
   }
   const profile = addMutablePlayer(playerByKey, player, teamId, team.name, match);
   const eventName = typeof event.eventName === "string" ? event.eventName.trim().toLowerCase() : "";
+  const subEventName = typeof event.subEventName === "string" ? event.subEventName.trim().toLowerCase() : "";
   const tagIds = tagsOf(event);
   if (eventName === "pass") {
     profile.passesAttempted += 1;
@@ -479,6 +508,15 @@ function applyEvent(
       if (completed) profile.completedProgressivePasses += 1;
     }
   }
+  if (eventName === "duel" && subEventName === "ground defending duel") {
+    const outcomeCount = ["701", "702", "703"].filter((outcome) => tagIds.has(outcome)).length;
+    if (outcomeCount !== 1) {
+      profile.defensiveDuelDataComplete = false;
+    } else {
+      profile.groundDefensiveDuels += 1;
+      if (tagIds.has("703")) profile.clearlyWonGroundDefensiveDuels += 1;
+    }
+  }
   if (tagIds.has("301")) profile.assists += 1;
   if (tagIds.has("302")) profile.keyPasses += 1;
   if (eventName === "shot" && tagIds.has("101")) profile.goals += 1;
@@ -488,34 +526,40 @@ function buildPlayer(profile: MutablePlayer, retrievedAt: string, matchEventIds:
   if (profile.minutes <= 0) return undefined;
   const eventDataComplete = [...profile.appearanceMatchIds].every((matchId) => matchEventIds.has(matchId));
   const age = ageAt(profile.player.birthDate, profile.seasonEnd);
-  const progressivePassesDefinition = SupplementaryCapabilityMetricDefinitions.find((metric) => metric.key === "wyscoutProgressivePassesPer90")!;
-  const accurateProgressivePassesDefinition = SupplementaryCapabilityMetricDefinitions.find((metric) => metric.key === "wyscoutAccurateProgressivePassesPct")!;
-  const supplementaryMetrics = eventDataComplete && profile.progressivePassDataComplete
-    ? [
-      {
-        key: progressivePassesDefinition.key,
-        definition: progressivePassesDefinition.definition,
-        value: profile.progressivePasses / profile.minutes * 90,
-        unit: progressivePassesDefinition.unit,
-        normalization: progressivePassesDefinition.normalization,
-        sourceField: "positions[0].x → positions[1].x + tag 1801/1802；100 坐标点按 105 米换算（TactiScout 派生估计）",
-        sampleMinutes: profile.minutes,
-        sampleMatches: profile.appearanceMatchIds.size,
-      },
-      {
-        key: accurateProgressivePassesDefinition.key,
-        definition: accurateProgressivePassesDefinition.definition,
-        value: profile.progressivePasses === 0
+  const supplementaryMetrics: SupplementaryPerformanceMetric[] = [
+    ...(eventDataComplete && profile.progressivePassDataComplete ? [
+      supplementaryMetric(
+        profile,
+        "wyscoutProgressivePassesPer90",
+        profile.progressivePasses / profile.minutes * 90,
+        "positions[0].x → positions[1].x + tags 1801/1802；100 坐标点按 105 米换算（TactiScout 派生估计）",
+      ),
+      supplementaryMetric(
+        profile,
+        "wyscoutAccurateProgressivePassesPct",
+        profile.progressivePasses === 0
           ? null
           : profile.completedProgressivePasses / profile.progressivePasses * 100,
-        unit: accurateProgressivePassesDefinition.unit,
-        normalization: accurateProgressivePassesDefinition.normalization,
-        sourceField: "渐进传球推算事件中统计 tag 1801；tag 1802 作为未完成（TactiScout 派生估计）",
-        sampleMinutes: profile.minutes,
-        sampleMatches: profile.appearanceMatchIds.size,
-      },
-    ]
-    : [];
+        "渐进传球推算事件中统计 tag 1801；tag 1802 作为未完成（TactiScout 派生估计）",
+      ),
+    ] : []),
+    ...(eventDataComplete && profile.defensiveDuelDataComplete ? [
+      supplementaryMetric(
+        profile,
+        "wyscoutGroundDefensiveDuelsPer90",
+        profile.groundDefensiveDuels / profile.minutes * 90,
+        "eventName=Duel + subEventName=Ground defending duel；tags 701/702/703",
+      ),
+      supplementaryMetric(
+        profile,
+        "wyscoutClearlyWonGroundDefensiveDuelPct",
+        profile.groundDefensiveDuels === 0
+          ? null
+          : profile.clearlyWonGroundDefensiveDuels / profile.groundDefensiveDuels * 100,
+        "Ground defending duel outcome tags；703 / (701 + 702 + 703)，含中性 702",
+      ),
+    ] : []),
+  ];
   return PlayerProfileSchema.parse({
     playerId: `wyscout:${profile.player.id}:team:${profile.teamId}:competition:${profile.competitionId}:season:${profile.season}`,
     externalPlayerId: profile.player.id,

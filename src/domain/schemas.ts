@@ -118,6 +118,8 @@ export const PlayerDataSourceIdentitySchema = z.object({
 export type PlayerDataSourceIdentity = z.infer<typeof PlayerDataSourceIdentitySchema>;
 
 export const SupplementaryMetricKeySchema = z.enum([
+  "wyscoutGroundDefensiveDuelsPer90",
+  "wyscoutClearlyWonGroundDefensiveDuelPct",
   "wyscoutProgressivePassesPer90",
   "wyscoutAccurateProgressivePassesPct",
   "highIntensityDistancePer90",
@@ -260,6 +262,8 @@ export const CapabilityMetricDefinitions = [
 ] as const satisfies readonly { key: CapabilityMetricKey; label: string; unit: string }[];
 
 export const SupplementaryCapabilityMetricDefinitions = [
+  { key: "wyscoutGroundDefensiveDuelsPer90", label: "地面防守对抗 /90", definition: "Wyscout Ground defending duel 子事件次数，按估算出场分钟归一到每 90 分钟；这是事件频次，不等同于抢断次数。", unit: "次/90分钟", normalization: "per90" },
+  { key: "wyscoutClearlyWonGroundDefensiveDuelPct", label: "明确胜出占比（含中性结果）", definition: "Wyscout Ground defending duel 子事件中带 703（明确胜出）的比例；分母包括 701（明确失利）和 702（中性）。这是较简单的事件结果分类，不等同于通常意义的对抗成功率或抢断成功率。", unit: "%", normalization: "percentage" },
   { key: "wyscoutProgressivePassesPer90", label: "渐进传球（推算）", definition: "根据传球起终点 x 坐标的向前距离推算：起终点均在本方半场需前进至少 30 米，跨越中线需至少 15 米，均在对方半场需至少 10 米。假设 100 个坐标点对应 105 米，再按估算出场分钟归一到每 90 分钟；不是来源直接提供的字段。", unit: "次/90分钟", normalization: "per90" },
   { key: "wyscoutAccurateProgressivePassesPct", label: "渐进传球成功率（推算）", definition: "仅统计按同一分区门槛判定为渐进的传球（本方半场至少前进 30 米、跨越中线至少 15 米、对方半场至少 10 米）；其中带有 Wyscout 成功标签 1801 的比例。假设 100 个坐标点对应 105 米，且依赖坐标、成功/失败标签完整；不是来源直接提供的字段。", unit: "%", normalization: "percentage" },
   { key: "highIntensityDistancePer90", label: "高强度跑动距离", definition: "来源全场高强度跑动距离按样本分钟归一到每 90 分钟。", unit: "米/90分钟", normalization: "per90" },
