@@ -15,7 +15,7 @@ Determine whether a user-owned API-Football free account can serve one current-s
 - Check account status, current-season league coverage, and player-statistics coverage before requesting player data.
 - If coverage is available, request only the first `/players` page for one selected league and season; report counts, pagination, metric field presence, and missing-value coverage without printing player names or raw records.
 - Keep the response in memory only. Do not write it to the TactiScout database, browser storage, repository, or Ollama prompt.
-- Stop if the account lacks current-season or player-statistics coverage. Do not crawl pages or use another account to extend the quota.
+- Stop before requesting player data unless the selected season is explicitly marked current and both `players` and `fixtures.statistics_players` coverage are explicitly true. Do not crawl pages or use another account to extend the quota.
 - Do not enable a public UI integration until data display/republication, local retention, and model-processing permissions have been confirmed.
 
 ## Acceptance criteria

@@ -27,7 +27,7 @@ export interface ApiFootballSmokeResult {
     playersCovered: boolean | null;
     fixturePlayerStatisticsCovered: boolean | null;
   };
-  outcome: "season_or_league_unavailable" | "player_statistics_unavailable" | "page_received" | "empty_page";
+  outcome: "season_or_league_unavailable" | "season_not_current_or_unconfirmed" | "player_statistics_unavailable" | "page_received" | "empty_page";
   firstPage: {
     page: number | null;
     totalPages: number | null;
@@ -219,7 +219,10 @@ export async function runApiFootballSmoke(options: ApiFootballSmokeOptions): Pro
   };
 
   if (!selected) return { ...base, outcome: "season_or_league_unavailable", firstPage: null };
-  if (base.league.playersCovered !== true) {
+  if (base.league.current !== true) {
+    return { ...base, outcome: "season_not_current_or_unconfirmed", firstPage: null };
+  }
+  if (base.league.playersCovered !== true || base.league.fixturePlayerStatisticsCovered !== true) {
     return { ...base, outcome: "player_statistics_unavailable", firstPage: null };
   }
 
