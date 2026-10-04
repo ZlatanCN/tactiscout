@@ -30,8 +30,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .topbar-meta { display: flex; align-items: center; gap: 18px; }
 .source-pill { display: inline-flex; gap: 7px; align-items: center; padding: 7px 10px; border: 1px solid #e6cba9; border-radius: 999px; color: #895d2e; background: #faf1e6; font-size: 11px; font-weight: 600; }
 .source-pill-live { border-color: #bfd3c6; color: var(--green); background: var(--green-soft); }
+.source-pill-connecting { border-color: #d8ded9; color: #68766c; background: #f3f5f2; }
+.source-pill-unavailable { border-color: #e3c9c1; color: #965a4c; background: #fbf1ee; }
 .status-dot { width: 6px; height: 6px; flex: 0 0 6px; display: inline-block; border-radius: 50%; background: var(--orange); }
 .source-pill-live .status-dot, .source-mini .status-dot, .empty-data-note .status-dot { background: #4d9b70; }
+.source-pill-connecting .status-dot { background: #a1aaa1; animation: pulse 1.3s ease-in-out infinite; }
+.source-pill-unavailable .status-dot { background: #b85e4c; }
 .topbar-caption { color: #7d827d; font-size: 11px; }.topbar-caption span { padding: 0 4px; color: #c0bdb5; }
 .main-layout { max-width: 1450px; margin: 0 auto; padding: 42px 5.3vw 72px; }
 .intro-row { display: flex; align-items: flex-end; justify-content: space-between; margin: 0 0 34px; }
@@ -103,6 +107,13 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .dataset-scope-current_limited { border-color: #d8e5da; background: rgba(244,248,242,.93); }
 .dataset-scope-current_limited .dataset-scope-heading strong { color: #3d6d4c; }
 .dataset-scope-unavailable { border-style: dashed; }
+.dataset-connection-card { position: relative; z-index: 1; width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 12px; padding: 12px; border: 1px solid #e4d0c8; border-radius: 5px; background: rgba(252,246,243,.96); }
+.dataset-connection-pending { border-color: #dfe4df; background: rgba(247,248,245,.96); }
+.dataset-connection-copy { min-width: 0; }
+.dataset-connection-copy strong { color: #92594c; font-size: 11px; font-weight: 600; }
+.dataset-connection-pending .dataset-connection-copy strong { color: #647167; }
+.dataset-connection-copy p { margin: 4px 0 0; color: #7d817a; font-size: 10px; line-height: 1.55; }
+.dataset-retry-button { flex: 0 0 auto; min-height: 31px; }
 .empty-index { position: absolute; bottom: 25px; left: clamp(30px, 6vw, 82px); display: flex; align-items: center; gap: 9px; color: #a1a39c; font-family: var(--mono); font-size: 8px; letter-spacing: .08em; }.empty-index i { width: 20px; height: 1px; background: #d9d8d1; }
 .pitch-art { position: absolute; top: 50%; right: -64px; width: 330px; height: 400px; border: 1px solid rgba(29,100,75,.09); border-radius: 48%; transform: translateY(-50%) rotate(-19deg); }.pitch-circle { position: absolute; top: 50%; left: 50%; width: 110px; height: 110px; border: 1px solid rgba(29,100,75,.12); border-radius: 50%; transform: translate(-50%,-50%); }.pitch-dot { position: absolute; top: 48%; left: 28%; width: 9px; height: 9px; border-radius: 50%; background: var(--orange); box-shadow: 0 0 0 8px rgba(228,154,86,.12); }.pitch-line { position: absolute; top: 0; bottom: 0; left: 50%; border-left: 1px solid rgba(29,100,75,.08); }
 .loading-state { min-height: 590px; display: flex; flex-direction: column; align-items: center; justify-content: center; }.loading-state h2 { margin: 14px 0 8px; font-size: 20px; font-weight: 600; }.loading-state p { margin: 0; color: var(--muted); font-size: 12px; }.loading-orbit { display: grid; width: 58px; height: 58px; place-items: center; margin-bottom: 22px; border: 1px solid #d6e2d9; border-radius: 50%; }.loading-orbit span { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 9px #e9f0ea, 0 0 0 18px #f2f5f1; animation: pulse 1.3s ease-in-out infinite; }@keyframes pulse { 50% { transform: scale(.7); opacity: .6; } }

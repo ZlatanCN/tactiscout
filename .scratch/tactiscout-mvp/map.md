@@ -68,6 +68,7 @@ Labels: wayfinder:map
 - [Wyscout 跨来源历史档案补充](issues/34-wyscout-cross-source-archive-enrichment.md)：采用 post-review、report-only LangGraph 节点，串接当前候选来源 ID → Reep → Wyscout ID → 本地 2017/18 表现记录；只读本地数据，不将历史记录暴露给 planner/model、当前评分或推荐顺序。报告 schema 与 UI 保留映射依据、release、来源署名、赛季/赛事/样本；Wyscout 主数据模式不会重复附加自身档案。
 
 - [TactiScout 版本化球探数据集](issues/40-tactiscout-owned-scouting-dataset.md)：已完成 Wyscout 2017/18 历史快照的固定版本刷新、来源指纹、确定性派生、质量覆盖与报告追溯。它证明了 TactiScout 自己构建数据产品的管线，不等同于最新球员市场；近季广覆盖数据的许可与能力覆盖仍未解决。
+- [本地 API 连接状态](issues/44-explain-local-api-connection-state.md)：网页会清楚显示正在连接、服务端未连接或状态读取失败；断连时可重试，不再把服务错误显示为数据源未知。
 
 - [把球探调查进度做成可读的阶段时间线](issues/30-readable-investigation-progress.md)：每轮显示实际 LangGraph 阶段事件、重复阶段次数与耗时，不把流程阶段伪装成完成比例或推荐质量。
 

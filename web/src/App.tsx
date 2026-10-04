@@ -39,6 +39,8 @@ const completedProgressLabels: Partial<Record<RecruitmentProgressStage, string>>
   failed: "调查遇到问题",
 };
 
+type DatasetConnectionStatus = "connecting" | "connected" | "disconnected" | "unavailable";
+
 function elapsedLabel(seconds: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
@@ -54,6 +56,7 @@ function App() {
   const [planName, setPlanName] = useState("");
   const [originalBrief, setOriginalBrief] = useState("");
   const [dataset, setDataset] = useState<DatasetStatus | null>(null);
+  const [datasetConnectionStatus, setDatasetConnectionStatus] = useState<DatasetConnectionStatus>("connecting");
   const [plans, setPlans] = useState<SavedRecruitmentPlan[]>([]);
   const [activePlanId, setActivePlanId] = useState<string | null>(null);
   const [hasConversationState, setHasConversationState] = useState(false);
@@ -66,8 +69,20 @@ function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [playerObservationsOpen, setPlayerObservationsOpen] = useState(false);
 
+  async function refreshDatasetStatus() {
+    setDatasetConnectionStatus("connecting");
+    try {
+      const currentDataset = await getDatasetStatus();
+      setDataset(currentDataset);
+      setDatasetConnectionStatus("connected");
+    } catch (caught) {
+      setDataset(null);
+      setDatasetConnectionStatus(caught instanceof TypeError ? "disconnected" : "unavailable");
+    }
+  }
+
   useEffect(() => {
-    getDatasetStatus().then(setDataset).catch(() => setDataset(null));
+    void refreshDatasetStatus();
     try {
       setPlans(loadRecruitmentPlans());
     } catch (caught) {
@@ -75,7 +90,10 @@ function App() {
     }
   }, []);
 
-  const datasetLabel = dataset?.mode === "statsbomb" ? "StatsBomb Open Data" : dataset?.source ?? "数据源状态未知";
+  const datasetLabel = dataset?.mode === "statsbomb"
+    ? "StatsBomb Open Data"
+    : dataset?.source
+      ?? (datasetConnectionStatus === "connecting" ? "正在连接球探服务" : datasetConnectionStatus === "disconnected" ? "服务端未连接" : "数据状态不可用");
   const waitingForAnswer = status === "needs_input";
 
   useEffect(() => {
@@ -292,7 +310,7 @@ function App() {
           <span>TactiScout</span>
         </a>
         <div className="topbar-meta">
-          <span className={`source-pill ${dataset?.mode === "sportmonks" || dataset?.mode === "fbref" ? "source-pill-live" : ""}`}><span className="status-dot" />{datasetLabel}</span>
+          <span className={`source-pill ${dataset?.mode === "sportmonks" || dataset?.mode === "fbref" ? "source-pill-live" : ""} ${datasetConnectionStatus === "connecting" ? "source-pill-connecting" : ""} ${datasetConnectionStatus === "disconnected" || datasetConnectionStatus === "unavailable" ? "source-pill-unavailable" : ""}`}><span className="status-dot" />{datasetLabel}</span>
           <button type="button" className="text-button observations-open-button" onClick={() => setPlayerObservationsOpen(true)}>球探观察</button>
           <span className="topbar-caption">对话式球探工作台 <span>·</span> MVP</span>
         </div>
@@ -390,7 +408,7 @@ function App() {
           </section>
 
           <section className="report-panel" aria-live="polite">
-            {report ? <RecruitmentReportView report={report} reportedAt={reportAt} isWaiting={waitingForAnswer} snapshot={dataset?.snapshot ?? null} /> : <EmptyReport dataset={dataset} datasetLabel={datasetLabel} />}
+            {report ? <RecruitmentReportView report={report} reportedAt={reportAt} isWaiting={waitingForAnswer} snapshot={dataset?.snapshot ?? null} /> : <EmptyReport dataset={dataset} datasetLabel={datasetLabel} connectionStatus={datasetConnectionStatus} onRetry={() => void refreshDatasetStatus()} />}
           </section>
         </div>
       </main>
@@ -423,7 +441,7 @@ function SavedPlans({ plans, activePlanId, onOpen, onDelete, onNew }: {
   );
 }
 
-function EmptyReport({ dataset, datasetLabel }: { dataset: DatasetStatus | null; datasetLabel: string }) {
+function EmptyReport({ dataset, datasetLabel, connectionStatus, onRetry }: { dataset: DatasetStatus | null; datasetLabel: string; connectionStatus: DatasetConnectionStatus; onRetry: () => void }) {
   return (
     <div className="empty-state report-empty-state">
       <div className="pitch-art" aria-hidden="true"><span className="pitch-circle" /><span className="pitch-dot" /><span className="pitch-line" /></div>
@@ -431,11 +449,17 @@ function EmptyReport({ dataset, datasetLabel }: { dataset: DatasetStatus | null;
       <h2>先说说你要解决的<br /><em>阵容问题。</em></h2>
       <p>球探会围绕可观察的比赛表现建立能力画像，比较候选人的数据、样本和风险，不会用未经验证的总分替代判断。</p>
       <div className="empty-data-note"><span className="status-dot" />当前数据来源：{datasetLabel}</div>
-      <DatasetScopeCard
-        scope={dataset ? describeDatasetScope(dataset.mode, undefined, dataset.snapshot) : null}
+      {dataset ? <DatasetScopeCard
+        scope={describeDatasetScope(dataset.mode, undefined, dataset.snapshot)}
         showCoverageState={false}
-        snapshot={dataset?.snapshot}
-      />
+        snapshot={dataset.snapshot}
+      /> : <section className={`dataset-connection-card ${connectionStatus === "connecting" ? "dataset-connection-pending" : ""}`} aria-label="球探服务连接状态" role="status" aria-live="polite">
+        <div className="dataset-connection-copy">
+          <strong>{connectionStatus === "connecting" ? "正在读取数据范围" : connectionStatus === "disconnected" ? "无法连接球探服务" : "暂时无法读取数据范围"}</strong>
+          <p>{connectionStatus === "connecting" ? "正在连接本地服务并确认可用的数据源。" : connectionStatus === "disconnected" ? "请确认本地球探服务已启动，再重试连接。" : "服务端暂时没有返回数据范围，请检查服务状态后重试。"}</p>
+        </div>
+        <button type="button" className="secondary-button dataset-retry-button" onClick={onRetry} disabled={connectionStatus === "connecting"}>{connectionStatus === "connecting" ? "连接中…" : "重试连接"}</button>
+      </section>}
       <div className="empty-index"><span>INVESTIGATE</span><i /><span>COMPARE</span><i /><span>EXPLAIN</span></div>
     </div>
   );
@@ -485,7 +509,7 @@ function RecruitmentReportView({ report, reportedAt, isWaiting, snapshot }: { re
 
 function DatasetScopeCard({ scope, showCoverageState, snapshot }: { scope: RecruitmentReport["datasetScope"] | null; showCoverageState: boolean; snapshot?: DatasetStatus["snapshot"] }) {
   if (!scope) {
-    return <section className="dataset-scope-card dataset-scope-unavailable" aria-label="数据范围说明"><span className="report-section-label">数据范围</span><p>当前数据来源说明暂时不可用。</p></section>;
+    return <section className="dataset-scope-card dataset-scope-unavailable" aria-label="数据范围说明"><span className="report-section-label">数据范围</span><p>这份报告没有提供数据范围说明。</p></section>;
   }
   const matchingSnapshot = scope.datasetId === snapshot?.datasetId ? snapshot : undefined;
   return (
