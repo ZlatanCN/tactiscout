@@ -29,6 +29,7 @@ const completedProgressLabels: Partial<Record<RecruitmentProgressStage, string>>
   team_sample: "已检查目标球队样本",
   candidate_search: "已搜索候选球员",
   player_evaluation: "已评估候选球员表现",
+  external_signal: "已核对外部表现信号",
   report_search: "已查找球员报告资料",
   synthesizing: "已汇总候选证据",
   review: "已核对推荐证据",
@@ -462,6 +463,7 @@ function RecruitmentReportView({ report, reportedAt, isWaiting }: { report: Recr
         scope.season ? `赛季 ${scope.season}` : null,
       ].filter(Boolean).join(" · ") || "未设位置、年龄或赛事赛季限制"}</li>)}</ul></section>}
       <section className="evidence-coverage"><span className="report-section-label">证据覆盖</span><p>已评估 {report.evidenceCoverage.evaluatedCandidateCount} 名候选 · 指标值 {report.evidenceCoverage.availableMetricValues} / {report.evidenceCoverage.expectedMetricValues} 项 · 小样本 {report.evidenceCoverage.lowSampleCandidates} 人 · 同组比较受限 {report.evidenceCoverage.limitedPeerGroupCandidates} 人</p><small>说明当前数据覆盖和样本情况，不代表推荐正确率。</small></section>
+      <section className="external-signal-coverage"><span className="report-section-label">独立外部信号 · PlayerElo</span><p>{externalSignalCoverageText(report.externalSignalCoverage)}</p><small>仅作整体表现参考；不进入战术能力评分、候选排序或 Agent 结论。</small></section>
       <section className="knowledge-coverage"><span className="report-section-label">资料检索</span><p>角色/方法片段 {report.knowledgeCoverage.methodologyChunksRetrieved} 条{report.knowledgeCoverage.methodologySearchFailed ? "（检索失败）" : ""} · 球员报告 {report.knowledgeCoverage.playerReportChunksRetrieved} 条{report.knowledgeCoverage.playerReportSearchFailed ? "（检索失败）" : report.knowledgeCoverage.playerReportSearchPerformed ? "（已在表现评估后检索）" : "（未检索）"}</p><small>球员报告只补充定性观察，不直接计入能力评分；关联比赛指标也不代表整条观察已证实。</small></section>
       <div className="recommendation-heading"><div><span className="report-section-label">候选推荐</span><p>名单顺序是建议的后续考察优先级，不是客观能力排名；每项依据都来自可观察数据。</p></div><span className="results-count">{String(report.recommendations.length).padStart(2, "0")} <small>球员</small></span></div>
       {report.recommendations.length ? <>
@@ -537,6 +539,13 @@ function RecommendationCard({ recommendation, rank, selected, selectionDisabled,
         <div><strong className="evidence-label">重点引用的数据</strong>{recommendation.strengths.length ? <ul>{recommendation.strengths.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul> : <p>未单独标注</p>}</div>
         <div className="risk-column"><strong className="evidence-label">取舍与待核实</strong>{recommendation.tradeoffs.length ? <ul>{recommendation.tradeoffs.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul> : <p>未单独标注</p>}</div>
       </div>
+      {recommendation.externalSignals.map((signal) => <section className="external-player-signal" key={`${signal.provider}-${signal.providerPlayerId}`}>
+        <strong className="evidence-label">独立表现参考 · PlayerElo</strong>
+        <p><b>Elo {formatMetric(signal.elo)}</b>{signal.earLabel ? ` · ${signal.earLabel}` : ""}</p>
+        <small>{[signal.currentTeam ? `来源当前球队：${signal.currentTeam}` : null, signal.currentLeague ? `联赛：${signal.currentLeague}` : null, signal.position ? `位置：${signal.position}` : null].filter(Boolean).join(" · ") || "来源未提供球队或位置"}</small>
+        <small>按唯一规范化姓名匹配；请核对球员身份和来源当前球队。更新于 {formatDate(signal.retrievedAt)}。</small>
+        <a href="https://playerelo.football/" target="_blank" rel="noreferrer">PlayerElo · 模型说明与来源</a>
+      </section>)}
       {recommendation.evidence.length > 0 && <div className="evidence-table-wrap"><table className="evidence-table"><thead><tr><th>可观测指标</th><th>数值</th><th>对比组</th><th>来源样本</th></tr></thead><tbody>{recommendation.evidence.map((evidence) => <tr key={evidence.key}><th scope="row">{evidence.label}{recommendation.focusEvidenceKeys.includes(evidence.key) && <small className="focus-evidence-tag">本轮重点</small>}{evidence.definition && <small className="evidence-description">{evidence.definition}</small>}</th><td>{formatMetric(evidence.value)} {evidence.unit}</td><td>{evidence.peerPercentile === null ? `样本 ${evidence.peerGroupSize} 人，不显示百分位` : `第 ${evidence.peerPercentile} 百分位 · ${evidence.peerGroupSize} 人`}</td><td>{evidence.sampleMatches === undefined ? "—" : `${evidence.sampleMatches} 场 · ${Math.round(evidence.minutes)} 分钟`}{evidence.sampleAttempts !== undefined && <small>{evidence.sampleAttempts} 次非点球射门</small>}{evidence.sourceField && <small>{evidence.sourceField}</small>}</td></tr>)}</tbody></table></div>}
       {recommendation.reportObservations.length > 0 && <section className="report-observations"><strong className="evidence-label">球员定性观察</strong><ul>{recommendation.reportObservations.map((observation, index) => {
         const firstParty = observation.source.sourceId === firstPartyObservationSourceId;
@@ -557,6 +566,21 @@ function RecommendationCard({ recommendation, rank, selected, selectionDisabled,
 
 function formatMetric(value: number): string {
   return Number.isInteger(value) ? value.toLocaleString() : value.toFixed(2);
+}
+
+function externalSignalCoverageText(coverage: RecruitmentReport["externalSignalCoverage"]): string {
+  if (coverage.status === "disabled") {
+    return coverage.disabledReason === "api_key_missing"
+      ? "未配置服务端 API key，当前未查询。"
+      : coverage.disabledReason === "report_display_not_allowed"
+        ? "尚未开启报告展示许可，当前未查询。"
+        : "尚未开启本机案件与报告快照保留许可，当前未查询。";
+  }
+  if (coverage.status === "not_run") return "本轮未查询；配置并获准展示后，只会在证据审查通过后核对最终推荐对象。";
+  const summary = `已查询 ${coverage.checkedCandidates} 人，唯一匹配 ${coverage.matchedCandidates} 人`;
+  if (coverage.status === "complete") return `${summary}；查询完整。未匹配项不会按零分处理。`;
+  if (coverage.status === "partial") return `${summary}；${coverage.failedCandidates} 人查询失败。未匹配项不会按零分处理。`;
+  return `${summary}；外部查询失败，未匹配项不会按零分处理。`;
 }
 
 function formatDate(value: string): string {

@@ -66,6 +66,10 @@ export interface PlayerEloClientOptions {
   allowModelProcessing: boolean;
   /** Must represent confirmed permission to display returned records in the product. */
   allowReportDisplay: boolean;
+  /** Must represent confirmed permission for application-managed case/report snapshots to retain the output. */
+  allowLocalRetention?: boolean;
+  /** Report-only data stays outside the model prompt; model_input retains the stricter gate. */
+  processingMode?: "model_input" | "report_only";
   requestTimeoutMs?: number;
   fetchImpl?: typeof fetch;
   now?: () => Date;
@@ -89,10 +93,13 @@ export class PlayerEloClient {
     if (!options.apiKey.trim()) {
       throw new PlayerEloClientError("invalid_configuration", "PlayerElo API key is not configured.");
     }
-    if (!options.allowModelProcessing || !options.allowReportDisplay) {
+    const processingMode = options.processingMode ?? "model_input";
+    if ((processingMode === "model_input" && !options.allowModelProcessing)
+      || !options.allowReportDisplay
+      || (processingMode === "report_only" && options.allowLocalRetention !== true)) {
       throw new PlayerEloClientError(
         "permission_required",
-        "PlayerElo lookups are disabled until model-processing and report-display permissions are explicitly confirmed.",
+        "PlayerElo lookups are disabled until the required processing and report-display permissions are explicitly confirmed.",
       );
     }
     this.requestTimeoutMs = options.requestTimeoutMs ?? 10_000;
@@ -198,4 +205,31 @@ export class PlayerEloClient {
       throw new PlayerEloClientError("invalid_response", "PlayerElo returned invalid JSON.");
     }
   }
+}
+
+export type ConfiguredPlayerEloClient =
+  | { client: PlayerEloClient; status: "enabled" }
+  | { client: null; status: "disabled"; reason: "api_key_missing" | "report_display_not_allowed" | "local_retention_not_allowed" };
+
+export function createConfiguredPlayerEloReportClient(
+  environment: Record<string, string | undefined> = process.env,
+): ConfiguredPlayerEloClient {
+  const apiKey = environment.PLAYER_ELO_API_KEY?.trim();
+  if (!apiKey) return { client: null, status: "disabled", reason: "api_key_missing" };
+  if (environment.TACTISCOUT_PLAYER_ELO_REPORT_DISPLAY_ALLOWED !== "true") {
+    return { client: null, status: "disabled", reason: "report_display_not_allowed" };
+  }
+  if (environment.TACTISCOUT_PLAYER_ELO_LOCAL_RETENTION_ALLOWED !== "true") {
+    return { client: null, status: "disabled", reason: "local_retention_not_allowed" };
+  }
+  return {
+    client: new PlayerEloClient({
+      apiKey,
+      allowModelProcessing: false,
+      allowReportDisplay: true,
+      allowLocalRetention: true,
+      processingMode: "report_only",
+    }),
+    status: "enabled",
+  };
 }

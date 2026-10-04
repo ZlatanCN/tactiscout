@@ -69,6 +69,7 @@ function reportFromLegacy(analysis: ScoutResponse, brief: string): RecruitmentRe
     strengths: candidate.reasons,
     tradeoffs: candidate.risks,
     focusEvidenceKeys: [],
+    externalSignals: [],
     reportObservations: [],
     evidence: CapabilityMetricDefinitions.flatMap(({ key, label, unit }) => {
       const value = candidate.per90[key];
@@ -100,6 +101,13 @@ function reportFromLegacy(analysis: ScoutResponse, brief: string): RecruitmentRe
       expectedMetricValues: analysis.candidates.length * CapabilityMetricDefinitions.length,
       lowSampleCandidates: analysis.candidates.filter((candidate) => candidate.player.minutes < 900).length,
       limitedPeerGroupCandidates: analysis.candidates.length,
+    },
+    externalSignalCoverage: {
+      status: "not_run",
+      disabledReason: null,
+      checkedCandidates: 0,
+      matchedCandidates: 0,
+      failedCandidates: 0,
     },
     knowledgeCoverage: { methodologyChunksRetrieved: 0, methodologySearchFailed: false, playerReportSearchPerformed: false, playerReportSearchFailed: false, playerReportChunksRetrieved: 0 },
     searchScopes: [{

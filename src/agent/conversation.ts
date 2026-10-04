@@ -13,12 +13,16 @@ import {
   type CapabilityMetricKey,
   type DatasetMode,
   type DatasetScope,
+  type ExternalSignalCoverage,
   type Position,
   type ConversationTurnResponse,
   type PlayerProfile,
+  type PlayerEloSignal,
   type RecruitmentReport,
 } from "../domain/schemas.js";
 import { inspectTeamPlayers, loadComparisonPlayers, loadPlayersByIds, searchPlayerPage, type PlayerRepository } from "../data/provider.js";
+import { createConfiguredPlayerEloReportClient } from "../data/playerelo-client.js";
+import { enrichPlayerEloSignals } from "../data/playerelo-enrichment.js";
 import { describeDatasetScope } from "../domain/dataset-scope.js";
 import { positionMatches } from "../domain/positions.js";
 import { normalizeSearchText } from "../domain/text-matching.js";
@@ -444,6 +448,14 @@ const RecruitmentState = Annotation.Root({
     reducer: (previous, update) => ({ ...previous, ...update }),
     default: () => ({}),
   }),
+  externalSignals: replaceable<Record<string, PlayerEloSignal>>(() => ({})),
+  externalSignalCoverage: replaceable<ExternalSignalCoverage>(() => ({
+    status: "not_run",
+    disabledReason: null,
+    checkedCandidates: 0,
+    matchedCandidates: 0,
+    failedCandidates: 0,
+  })),
   targetTeam: replaceable<string | null>(() => null),
   confirmedPosition: replaceable<Position | null>(() => null),
   confirmedPositionSearchMatchCount: replaceable<number | null>(() => null),
@@ -843,6 +855,22 @@ export function createRecruitmentConversation(input: {
 }): RecruitmentConversation {
   const { repository, planner, observer } = input;
   const knowledgeBase = input.knowledgeBase ?? createLocalKnowledgeBase();
+  const playerEloSetup = createConfiguredPlayerEloReportClient();
+  const disabledPlayerEloCoverage: ExternalSignalCoverage = playerEloSetup.status === "disabled"
+    ? {
+      status: "disabled",
+      disabledReason: playerEloSetup.reason,
+      checkedCandidates: 0,
+      matchedCandidates: 0,
+      failedCandidates: 0,
+    }
+    : {
+      status: "not_run",
+      disabledReason: null,
+      checkedCandidates: 0,
+      matchedCandidates: 0,
+      failedCandidates: 0,
+    };
   const progressCallbacksByThread = new Map<string, (progress: ProgressUpdate) => void>();
   const emitProgress = (config: LangGraphRunnableConfig, progress: ProgressUpdate) => {
     const threadId = config.configurable?.thread_id;
@@ -856,6 +884,8 @@ export function createRecruitmentConversation(input: {
         history: [{ role: "user" as const, content: state.userMessage }],
         ...(explicitTargetTeam ? { targetTeam: explicitTargetTeam } : {}),
         report: null,
+        externalSignals: {},
+        externalSignalCoverage: disabledPlayerEloCoverage,
         responseMessage: "",
         pendingQuestion: null,
         decisionSteps: 0,
@@ -1399,6 +1429,35 @@ export function createRecruitmentConversation(input: {
       }
       return { reviewResult: "exhausted" as const };
     })
+    .addNode("enrich_external_signals", async (state: State, config: LangGraphRunnableConfig) => {
+      if (!playerEloSetup.client || state.action?.action !== "finish") {
+        return { externalSignalCoverage: disabledPlayerEloCoverage };
+      }
+      const eligibleEvaluatedPlayers = evaluatedPlayersForConstraint(state);
+      const players = state.action.recommendations.flatMap(({ playerId }) => {
+        const candidate = eligibleEvaluatedPlayers[playerId];
+        return candidate ? [candidate.player] : [];
+      });
+      if (!players.length) return { externalSignalCoverage: disabledPlayerEloCoverage };
+
+      emitProgress(config, {
+        stage: "external_signal",
+        message: `正在核对 ${players.length} 名推荐球员的独立外部表现信号`,
+        completedSteps: state.decisionSteps,
+      });
+      const result = await enrichPlayerEloSignals(playerEloSetup.client, players);
+      const successfulLookups = result.checkedCandidates - result.failedCandidates;
+      return {
+        externalSignals: result.signalsByPlayerId,
+        externalSignalCoverage: {
+          status: result.failedCandidates === 0 ? "complete" : successfulLookups > 0 ? "partial" : "failed",
+          disabledReason: null,
+          checkedCandidates: result.checkedCandidates,
+          matchedCandidates: result.matchedCandidates,
+          failedCandidates: result.failedCandidates,
+        } satisfies ExternalSignalCoverage,
+      };
+    })
     .addNode("deliver_recommendation", (state: State) => {
       const action = state.action?.action === "finish" ? state.action : emptyDecision(state.targetTeam);
       const eligibleEvaluatedPlayers = evaluatedPlayersForConstraint(state);
@@ -1420,6 +1479,7 @@ export function createRecruitmentConversation(input: {
           tradeoffs,
           focusEvidenceKeys: item.evidenceKeys,
           evidence: evaluated.evidence,
+          externalSignals: state.externalSignals[item.playerId] ? [state.externalSignals[item.playerId]!] : [],
           reportObservations: action.reportObservations.filter((observation) => observation.playerId === item.playerId
             && Object.hasOwn(eligibleEvaluatedPlayers, observation.playerId)).flatMap((observation) => {
             const document = Object.values(state.retrievedKnowledge).find((candidate) => candidate.documentId === observation.documentId);
@@ -1459,6 +1519,7 @@ export function createRecruitmentConversation(input: {
             limitedPeerGroupCandidates: evaluated.filter((item) => item.evidence.some((evidence) => evidence.peerPercentile === null)).length,
           };
         })(),
+        externalSignalCoverage: state.externalSignalCoverage,
         knowledgeCoverage: {
           methodologyChunksRetrieved: retrievedDocuments.filter((document) => document.corpus === "methodology").length,
           methodologySearchFailed: state.methodologySearchFailed,
@@ -1489,10 +1550,19 @@ export function createRecruitmentConversation(input: {
       return "tool";
     }, { ask: "wait_for_user", replan: "choose_next_action", review: "review_recommendation", tool: "execute_tool" })
     .addEdge("execute_tool", "choose_next_action")
-    .addConditionalEdges("review_recommendation", (state: State) => state.reviewResult === "retry" ? "retry" : "deliver", {
+    .addConditionalEdges("review_recommendation", (state: State) => {
+      if (state.reviewResult === "retry") return "retry";
+      if (state.reviewResult === "valid"
+        && playerEloSetup.client
+        && state.action?.action === "finish"
+        && state.action.recommendations.length > 0) return "enrich";
+      return "deliver";
+    }, {
       retry: "choose_next_action",
+      enrich: "enrich_external_signals",
       deliver: "deliver_recommendation",
     })
+    .addEdge("enrich_external_signals", "deliver_recommendation")
     .addEdge("deliver_recommendation", END)
     .compile({ checkpointer: input.checkpointer ?? new MemorySaver() });
 

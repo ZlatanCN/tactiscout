@@ -299,6 +299,29 @@ export const CapabilityEvidenceSchema = z.object({
 });
 export type CapabilityEvidence = z.infer<typeof CapabilityEvidenceSchema>;
 
+export const PlayerEloSignalSchema = z.object({
+  provider: z.literal("PlayerElo"),
+  providerPlayerId: z.string().min(1),
+  playerName: z.string().min(1),
+  elo: z.number().finite(),
+  earLabel: z.string().nullable(),
+  currentTeam: z.string().nullable(),
+  currentLeague: z.string().nullable(),
+  position: z.string().nullable(),
+  identityMatch: z.literal("unique_normalized_name"),
+  retrievedAt: z.string().datetime(),
+});
+export type PlayerEloSignal = z.infer<typeof PlayerEloSignalSchema>;
+
+export const ExternalSignalCoverageSchema = z.object({
+  status: z.enum(["disabled", "not_run", "complete", "partial", "failed"]),
+  disabledReason: z.enum(["api_key_missing", "report_display_not_allowed", "local_retention_not_allowed"]).nullable(),
+  checkedCandidates: z.number().int().nonnegative(),
+  matchedCandidates: z.number().int().nonnegative(),
+  failedCandidates: z.number().int().nonnegative(),
+});
+export type ExternalSignalCoverage = z.infer<typeof ExternalSignalCoverageSchema>;
+
 export const PlayerRecommendationSchema = z.object({
   player: PlayerProfileSchema,
   rationale: z.string(),
@@ -306,6 +329,7 @@ export const PlayerRecommendationSchema = z.object({
   tradeoffs: z.array(z.string()),
   focusEvidenceKeys: z.array(CapabilityMetricKeySchema),
   evidence: z.array(CapabilityEvidenceSchema),
+  externalSignals: z.array(PlayerEloSignalSchema).default([]),
   reportObservations: z.array(z.object({
     summary: z.string(),
     verificationStatus: z.enum(["unverified", "linked_to_match_data"]),
@@ -358,6 +382,13 @@ export const RecruitmentReportSchema = z.object({
   needSummary: z.string(),
   capabilityProfile: z.array(z.string()),
   evidenceCoverage: EvidenceCoverageSummarySchema,
+  externalSignalCoverage: ExternalSignalCoverageSchema.default({
+    status: "not_run",
+    disabledReason: null,
+    checkedCandidates: 0,
+    matchedCandidates: 0,
+    failedCandidates: 0,
+  }),
   knowledgeCoverage: KnowledgeCoverageSchema.default({
     methodologyChunksRetrieved: 0,
     methodologySearchFailed: false,
@@ -390,6 +421,7 @@ export const RecruitmentProgressStageSchema = z.enum([
   "team_sample",
   "candidate_search",
   "player_evaluation",
+  "external_signal",
   "report_search",
   "synthesizing",
   "review",
