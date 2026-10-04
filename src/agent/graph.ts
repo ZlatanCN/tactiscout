@@ -58,7 +58,8 @@ export function runScout(input: ScoutInput): Promise<ScoutResponse> {
 
 function buildCaveats(requirements: Requirements, repo: PlayerRepository): string[] {
   return [
-    "推进维度使用带球次数和长传次数作为粗略代理；不能替代方向校正后的 progressive actions。",
+    "推进维度优先使用有方向信息的表现指标；若没有，仅把带球次数和长传次数作为粗略代理，并说明不能替代 progressive actions。",
+    ...(repo.mode === "wyscout" ? ["Wyscout ‘渐进传球（推算）’是 TactiScout 坐标估计，必须保留估算标签与定义，不得称为来源直接指标。"] : []),
     "机会创造使用射门助攻和助攻次数作为粗略代理；未评估机会质量或传球难度。",
     "施压、抢断与拦截反映动作次数，不代表成功率或所在战术位置。",
     ...(repo.mode === "statsbomb" ? ["球员位置取 StatsBomb 阵容记录中的主要位置，跨位置球员可能被简化归类。"] : []),

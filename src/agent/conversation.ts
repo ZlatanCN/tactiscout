@@ -113,7 +113,7 @@ const agentInstructions = [
   "在至少调用一个球队/候选/评估数据工具前，不得向用户提问或提交最终报告；如信息不足，先调查可用证据再决定是否提问。不能因为年龄、预算或位置未说明就开场发送问卷。只有关键角色歧义会改变候选集时才提出一个简短问题，并说明原因。用户回答后继续原案件。",
   "inspect_team 返回所选数据源中可用的阵容样本。只有 source identity 明确标记 isCurrentSeason=true 的 Sportmonks 数据才可用于描述该来源记录的当前赛季阵容；这不代表范围外的完整市场覆盖。StatsBomb Open Data 只覆盖指定赛事/赛季；演示数据是虚构的。",
   "若数据模式为 SkillCorner Open Data，球员指标来自 2024/25 澳大利亚 A-League 历史样例，不能描述为当前球员市场或欧洲联赛候选池。只引用 evaluate_candidates 工具返回的补充指标；保留原指标口径、单位、场次和来源字段，不自行把跑动/传球指标转换成评分或潜力结论。",
-  "若数据模式为 Wyscout Open Data，球员、球队、年龄和统计只对应 2017/18 历史比赛样本，不是现役球员池。不要据此断言当前俱乐部、当前年龄、转会可行性或未来能力；只引用 evaluate_candidates 返回的实测指标。助攻标签 301、关键传球标签 302 是不同指标，关键传球不是射门助攻；当前数据不支持射门助攻。出场分钟由首发阵容与换人分钟估算，不含补时且未校正红牌等特殊情况。说明 CC BY 4.0 来源。",
+  "若数据模式为 Wyscout Open Data，球员、球队、年龄和统计只对应 2017/18 历史比赛样本，不是现役球员池。不要据此断言当前俱乐部、当前年龄、转会可行性或未来能力；只引用 evaluate_candidates 返回的指标。助攻标签 301、关键传球标签 302 是不同指标，关键传球不是射门助攻；当前数据不支持射门助攻。‘渐进传球（推算）’和‘渐进传球成功率（推算）’是 TactiScout 根据方向坐标、105 米场地长度假设和 Wyscout 阈值计算的估计值，不是 Wyscout 直接提供的指标；仅在坐标及成功/失败标签完整时可用。出场分钟由首发阵容与换人分钟估算，不含补时且未校正红牌等特殊情况。报告须保留历史范围、推算口径和 CC BY 4.0 来源，不把推算结果称作实测来源指标。",
   "search_candidates 是发现工具，不按能力排序。默认保留所有出场样本；不要静默设置最低分钟数，除非用户明确提出样本门槛。结果按数据仓库顺序分页；如果还没有足够多样的候选，使用 nextOffset 继续搜索后再挑选评估对象。",
   "位置只能按用户明确指定的细分角色收窄。用户只说泛称‘中场’、‘后卫’、‘前锋’或‘能踢中场’时，不要自行推断成 CM、AM 等单一子位置；search_candidates.position 必须为 null，先广泛发现候选，再依据主位置和能力证据决定深入评估谁。只有用户明确说后腰、中前卫、前腰等具体角色时，才用单一位置作为硬筛选。",
   "当用户要求寻找某名球员的‘替代者/接班人/替补’时，将该球员作为参考画像，不把他当作候选过滤条件。search_candidates.playerName 只用于核验球员报告新发现的候选人；绝不能用参考球员姓名筛选候选池。当前没有单独的参考球员档案工具，因此不能假装已核验参考球员的现役球队、联赛或详细数据。若用户没有说明具体场上角色，先完成方法资料和一次宽范围候选检索，再问一个聚焦角色的问题；回答前不得直接完成推荐。",
@@ -771,7 +771,7 @@ function limitationsFor(state: State, repository: PlayerRepository, action: Fini
   if (repository.mode === "statsbomb") limitations.push("历史赛事阵容样本不能证明球队当前完整阵容；事件数据也不覆盖身体属性、潜力或合同信息。");
   if (repository.mode === "sportmonks") limitations.push("当前只使用服务端配置且套餐可访问的 Sportmonks 赛季；本版不提供市场估值、GPS/追踪数据或外部球探报告，也未将球员合同字段纳入结论。");
   if (repository.mode === "skillcorner") limitations.push("当前只覆盖 SkillCorner Open Data 的 2024/25 澳大利亚 A-League 样例；它不是现役阵容或完整引援市场。来源的位置组较宽（如 Full Back），不能据此识别左/右脚或左右边后卫。数据只保留来源指标与样本口径，未验证的派生能力不计分。");
-  if (repository.mode === "wyscout") limitations.push("当前 Wyscout 数据只覆盖 2017/18 历史顶级联赛样本，不是现役球员池；球队与年龄均按历史赛季解释，不能用于当前效力、年龄或转会可行性判断。来源事件仅映射进球（射门事件 + 标签 101）、助攻（标签 301）、传球（传球事件 + 成功标签 1801）和关键传球（旧版标签 302）。关键传球不等于射门助攻，射门助攻保持不可用。分钟按首发阵容与换人分钟估算为 90 分钟制，不含补时，也未校正红牌等特殊情况；按每 90 分钟归一化的结果应视为近似值。压力、盘带推进、身体能力等未映射指标保持不可用。数据由程序按 Wyscout 事件和标签聚合，来源为 Pappalardo 等人 2019 年数据集（CC BY 4.0）。");
+  if (repository.mode === "wyscout") limitations.push("当前 Wyscout 数据只覆盖 2017/18 历史顶级联赛样本，不是现役球员池；球队与年龄均按历史赛季解释，不能用于当前效力、年龄或转会可行性判断。来源事件映射进球（射门事件 + 标签 101）、助攻（标签 301）、传球（传球事件 + 成功标签 1801）和关键传球（旧版标签 302）；关键传球不等于射门助攻，射门助攻保持不可用。另有 TactiScout 根据起终点 x 坐标、105 米标准场地长度假设及 Wyscout 渐进传球阈值推算的渐进传球次数和成功率；这不是来源原生字段，缺少坐标或成功/失败标签时不提供。分钟按首发阵容与换人分钟估算为 90 分钟制，不含补时，也未校正红牌等特殊情况；每 90 分钟结果是近似值。压力、渐进带球、身体能力等未映射指标保持不可用。数据源为 Pappalardo 等人 2019 年数据集（CC BY 4.0）。");
   if (state.confirmedPosition && state.confirmedPositionSearchMatchCount === 0) {
     limitations.push(`本轮按用户确认的位置（${positionLabels[state.confirmedPosition]}）完成候选检索后，没有找到符合当前筛选条件的球员；没有放宽位置范围。`);
   } else if (state.confirmedPosition && state.confirmedPositionSearchMatchCount === null && !discoveredPlayersForConstraint(state).length) {

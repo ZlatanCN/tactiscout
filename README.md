@@ -107,7 +107,7 @@ TACTISCOUT_WYSCOUT_AI_PROCESSING_ALLOWED=false
 
 按需设置赛事 ID。只有确认配置的模型服务可以处理这些数据后才把 `TACTISCOUT_WYSCOUT_AI_PROCESSING_ALLOWED` 改为 `true`；本机 Ollama 可让原始数据留在本机。候选来源标明 Pappalardo 等人 2019 年数据集与 CC BY 4.0；公开展示派生数据时应附上[论文 DOI](https://doi.org/10.1038/s41597-019-0247-7)、[许可链接](https://creativecommons.org/licenses/by/4.0/)和修改说明。CC BY 不授予隐私或肖像等其他权利。
 
-Wyscout 事件指标映射为：射门事件的标签 101 计进球、标签 301 计助攻、标签 302 计关键传球；传球事件计尝试，标签 1801 计成功传球。旧版数据中的关键传球不是射门助攻，因此射门助攻在此来源中保持不可用。首发球员按 90 分钟、换人按记录分钟近似计算出场分钟；不含补时，也未校正红牌等特殊情况，所以每 90 分钟指标只是近似值。[Wyscout v2 事件与标签定义](https://support.wyscout.com/matches-wyid-events) · [当前 Wyscout 关键传球定义及旧版兼容说明](https://dataglossary.wyscout.com/key_pass/) · [传球与成功标签定义](https://dataglossary.wyscout.com/pass/)。这些记录只代表 2017/18 历史表现，不是现役球员池、当前俱乐部或转会可行性证据。
+Wyscout 事件指标映射为：射门事件的标签 101 计进球、标签 301 计助攻、标签 302 计关键传球；传球事件计尝试，标签 1801 计成功传球。旧版数据中的关键传球不是射门助攻，因此射门助攻在此来源中保持不可用。项目还会根据传球起终点的进攻方向 x 坐标，参照 Wyscout 渐进传球分区阈值并假设 100 个坐标点对应 105 米，推算渐进传球次数/90 和成功率。该数值是 TactiScout 派生估计，不是 Wyscout 原生字段；只在相关位置和成功/失败标签完整时显示。首发球员按 90 分钟、换人按记录分钟近似计算出场分钟；不含补时，也未校正红牌等特殊情况，所以每 90 分钟指标只是近似值。[Wyscout v2 事件与标签定义](https://support.wyscout.com/matches-wyid-events) · [渐进传球定义](https://dataglossary.wyscout.com/progressive_pass/) · [当前 Wyscout 关键传球定义及旧版兼容说明](https://dataglossary.wyscout.com/key_pass/) · [传球与成功标签定义](https://dataglossary.wyscout.com/pass/)。这些记录只代表 2017/18 历史表现，不是现役球员池、当前俱乐部或转会可行性证据。
 
 ## API
 

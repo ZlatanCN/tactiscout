@@ -118,6 +118,8 @@ export const PlayerDataSourceIdentitySchema = z.object({
 export type PlayerDataSourceIdentity = z.infer<typeof PlayerDataSourceIdentitySchema>;
 
 export const SupplementaryMetricKeySchema = z.enum([
+  "wyscoutProgressivePassesPer90",
+  "wyscoutAccurateProgressivePassesPct",
   "highIntensityDistancePer90",
   "sprintDistancePer90",
   "highIntensityActionsPer90",
@@ -258,6 +260,8 @@ export const CapabilityMetricDefinitions = [
 ] as const satisfies readonly { key: CapabilityMetricKey; label: string; unit: string }[];
 
 export const SupplementaryCapabilityMetricDefinitions = [
+  { key: "wyscoutProgressivePassesPer90", label: "渐进传球（推算）", definition: "根据传球起终点 x 坐标的向前距离，按 Wyscout 渐进传球分区阈值及 105 米标准场地长度假设推算，再按估算出场分钟归一到每 90 分钟；不是来源直接提供的字段。", unit: "次/90分钟", normalization: "per90" },
+  { key: "wyscoutAccurateProgressivePassesPct", label: "渐进传球成功率（推算）", definition: "推算为渐进传球的事件中，带有 Wyscout 成功标签 1801 的比例；依赖坐标、成功/失败标签完整，且不是来源直接提供的字段。", unit: "%", normalization: "percentage" },
   { key: "highIntensityDistancePer90", label: "高强度跑动距离", definition: "来源全场高强度跑动距离按样本分钟归一到每 90 分钟。", unit: "米/90分钟", normalization: "per90" },
   { key: "sprintDistancePer90", label: "冲刺距离", definition: "来源全场冲刺距离按样本分钟归一到每 90 分钟。", unit: "米/90分钟", normalization: "per90" },
   { key: "highIntensityActionsPer90", label: "高强度跑动次数", definition: "来源全场高强度跑动次数按样本分钟归一到每 90 分钟。", unit: "次/90分钟", normalization: "per90" },

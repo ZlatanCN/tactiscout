@@ -16,7 +16,9 @@ Labels: wayfinder:map
 - [补充球员表现数据源调查](research/additional-player-evidence-sources-2026-10.md)比较 SkillCorner、Metrica、Wyscout、StatsBomb 和 football-data.org，记录字段增益、覆盖与数据使用边界。
 - [具名球员表现数据许可与验证路径](research/player-performance-data-licensing-2026-10.md)核对 Wyscout、IDSSE、Metrica、OpenFootball 和 SkillCorner 的一手来源；Wyscout 2017/18 Figshare 数据项标明 CC BY 4.0，适合本机历史数据验证，不代表当前转会市场。
 - [足球数据源扩展调查](research/football-data-source-expansion-2026-10.md)核对 Sportmonks、API-Football、football-data.org、OpenLigaDB 与开放历史数据；没有找到零预算且同时具备现役阵容、球员表现指标及可公开展示授权的主数据源，Sportmonks 最适合延续现有实时 provider。
+- [新增球员与表现数据源调查](research/additional-player-data-options-2026-10.md)进一步核查 TheSportsDB、Afriskaut、Wikidata、Impect 与 Fantasy Premier League。当前结论：TheSportsDB 可 GO 做有限的只读 roster enrichment 验证，但公开部署应走 $9/月应用计划、能力评分暂 NO-GO、模型处理/缓存保留范围待书面确认；Afriskaut 可作为带署名的本地 2024 青少年事件 benchmark，不能当职业转会池，具名未成年资料的公开/模型处理先确认隐私和参与者授权；FPL 自动抽取 NO-GO。
 - [Wyscout 真实数据 smoke test](research/wyscout-real-data-smoke-2026-10.md)记录对官方 Figshare 文件的本机联调结果：默认五大联赛共 2,682 条历史球员赛季记录，真实文件中的嵌套阵容与哨兵字段已由 adapter 覆盖；源文件哈希和出处保存在 Git 忽略目录。
+- [issue 28：Wyscout 渐进传球事件派生证据](issues/28-wyscout-progressive-pass-evidence.md)将方向推进指标标为 TactiScout 派生估计，明确 105 米换算假设、坐标与成功标签覆盖门槛；不把它并入既有职责评分。
 - [issue 25：Wyscout 历史比赛事件 adapter](issues/25-wyscout-historical-event-adapter.md)代码、来源映射、合成回归夹具及官方 Figshare 五大联赛真实文件 smoke test 均已完成。
 - [issue 26：阻止候选分页重复耗尽调查预算](issues/26-wyscout-agent-cursor-regression.md)已完成：按搜索范围维护候选游标、压缩结论上下文、为 Qwen 请求增加时限；本机 Wyscout/Qwen 最终复验 184.3 秒通过全部 18 项行为检查，结论调用 69.7 秒。
 - 用户已授权继续实现；方向收敛后继续推进，不把项目留在纯计划阶段。
@@ -43,7 +45,10 @@ Labels: wayfinder:map
 
 - [防止候选分页耗尽 Agent 调查预算](issues/26-wyscout-agent-cursor-regression.md)：按搜索范围维护候选游标和评估去重；最终结论采用短提示与证据压缩历史，单次模型请求有界。真实 Wyscout/Qwen 单次验证通过，未验证候选排序准确率。
 
+- [Wyscout 渐进传球事件派生证据](issues/28-wyscout-progressive-pass-evidence.md)：使用起终点进攻方向坐标按 Wyscout 分区阈值估算渐进传球次数/90 与完成率；数据假设、来源字段和覆盖限制随证据报告。派生值仅作证据，不自动进入职责评分。
+
 - [具名球员表现数据许可与验证路径](research/player-performance-data-licensing-2026-10.md)：以 Wyscout CC BY 4.0 历史比赛数据作为潜在的具名事件分析验证源；原始数据留在本机、保留署名并使用 Ollama。数据许可不授予隐私/肖像权，旧赛季不得用于当前引援事实。当前球员池仍需另一个经过账户与模型处理许可确认的实时 provider。
+- [新增球员与表现数据源调查](research/additional-player-data-options-2026-10.md)：TheSportsDB 有球队球员列表与球员资料/统计 endpoint，Terms 允许复制/修改官方 API 返回内容，付费计划明确适用于 apps/services；批准用于一次有 provenance 的 roster enrichment spike。公开产品中若使用应选择 $9/mo 档并署名，免费档仅用于开发验证。API 未公开 player-statistics schema、覆盖 SLA、球员字段更新时间、缓存期限或 LLM 权限；因此球员 stats、market value、wage 和 profile prose 当前不得评分，LLM 处理保持关闭，缓存周期需先问提供方。Afriskaut Apache-2.0 静态青年赛事数据可验证战术事件分析，但具名未成年资料不得公开或送模型，直到确认个人数据授权；Wikidata 仅用作低置信 crosswalk；FPL 自动采集不做。
 - [Wyscout 历史比赛事件 adapter](issues/25-wyscout-historical-event-adapter.md)：把 Wyscout 定为具名历史表现验证源；事件计数由程序确定性聚合，LangGraph 负责调查工具编排与追问，本机模型解释带来源的证据。只有授权当前赛季 provider 能形成当前球员池。
 - [具名球员报告语料调查](issues/21-open-player-report-corpus.md)：没有找到明确允许自动获取、持久保存、AI/RAG 处理与面向用户展示的真实球员报告语料；近期优先做 TactiScout 自有授权观察记录，合成数据只作清楚标注的评测夹具。
 - [来源撤权和索引清除](issues/22-revoke-and-purge-knowledge-source.md)：检索时重读来源登记、预过滤无权语料，并允许删除当前 LanceDB 表版本中的来源片段。旧数据集版本的物理清理需停止所有访问进程后单独维护。

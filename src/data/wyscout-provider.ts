@@ -2,6 +2,7 @@ import { createReadStream } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import {
+  SupplementaryCapabilityMetricDefinitions,
   PlayerProfileSchema,
   type PlayerProfile,
   type Position,
@@ -59,6 +60,9 @@ interface MutablePlayer {
   passesCompleted: number;
   shotAssists: number;
   keyPasses: number;
+  progressivePassDataComplete: boolean;
+  progressivePasses: number;
+  completedProgressivePasses: number;
 }
 
 export type WyscoutProviderErrorCode = "invalid_configuration" | "missing_file" | "invalid_json" | "invalid_source_data";
@@ -347,6 +351,9 @@ function addMutablePlayer(
     passesCompleted: 0,
     shotAssists: 0,
     keyPasses: 0,
+    progressivePassDataComplete: true,
+    progressivePasses: 0,
+    completedProgressivePasses: 0,
   };
   players.set(key, value);
   return value;
@@ -404,6 +411,31 @@ function tagsOf(event: JsonRecord): Set<string> {
   }));
 }
 
+function passProgression(startX: number, endX: number): boolean {
+  const advancedMeters = (endX - startX) * 1.05;
+  if (advancedMeters <= 0) return false;
+
+  const startsInOwnHalf = startX < 50;
+  const endsInOwnHalf = endX < 50;
+  const thresholdMeters = startsInOwnHalf && endsInOwnHalf
+    ? 30
+    : startsInOwnHalf !== endsInOwnHalf
+      ? 15
+      : 10;
+  return advancedMeters >= thresholdMeters;
+}
+
+function passCoordinates(event: JsonRecord): { startX: number; endX: number } | undefined {
+  if (!Array.isArray(event.positions) || event.positions.length < 2) return undefined;
+  const start = asRecord(event.positions[0]);
+  const end = asRecord(event.positions[1]);
+  const startX = start?.x;
+  const endX = end?.x;
+  if (typeof startX !== "number" || typeof endX !== "number") return undefined;
+  if (!Number.isFinite(startX) || !Number.isFinite(endX) || startX < 0 || startX > 100 || endX < 0 || endX > 100) return undefined;
+  return { startX, endX };
+}
+
 function applyEvent(
   event: JsonRecord,
   matchById: Map<string, Match>,
@@ -437,6 +469,15 @@ function applyEvent(
   if (eventName === "pass") {
     profile.passesAttempted += 1;
     if (tagIds.has("1801")) profile.passesCompleted += 1;
+    const coordinates = passCoordinates(event);
+    const completed = tagIds.has("1801");
+    const failed = tagIds.has("1802");
+    if (!coordinates || completed === failed) {
+      profile.progressivePassDataComplete = false;
+    } else if (passProgression(coordinates.startX, coordinates.endX)) {
+      profile.progressivePasses += 1;
+      if (completed) profile.completedProgressivePasses += 1;
+    }
   }
   if (tagIds.has("301")) profile.assists += 1;
   if (tagIds.has("302")) profile.keyPasses += 1;
@@ -447,6 +488,34 @@ function buildPlayer(profile: MutablePlayer, retrievedAt: string, matchEventIds:
   if (profile.minutes <= 0) return undefined;
   const eventDataComplete = [...profile.appearanceMatchIds].every((matchId) => matchEventIds.has(matchId));
   const age = ageAt(profile.player.birthDate, profile.seasonEnd);
+  const progressivePassesDefinition = SupplementaryCapabilityMetricDefinitions.find((metric) => metric.key === "wyscoutProgressivePassesPer90")!;
+  const accurateProgressivePassesDefinition = SupplementaryCapabilityMetricDefinitions.find((metric) => metric.key === "wyscoutAccurateProgressivePassesPct")!;
+  const supplementaryMetrics = eventDataComplete && profile.progressivePassDataComplete
+    ? [
+      {
+        key: progressivePassesDefinition.key,
+        definition: progressivePassesDefinition.definition,
+        value: profile.progressivePasses / profile.minutes * 90,
+        unit: progressivePassesDefinition.unit,
+        normalization: progressivePassesDefinition.normalization,
+        sourceField: "positions[0].x → positions[1].x + tag 1801/1802；100 坐标点按 105 米换算（TactiScout 派生估计）",
+        sampleMinutes: profile.minutes,
+        sampleMatches: profile.appearanceMatchIds.size,
+      },
+      {
+        key: accurateProgressivePassesDefinition.key,
+        definition: accurateProgressivePassesDefinition.definition,
+        value: profile.progressivePasses === 0
+          ? null
+          : profile.completedProgressivePasses / profile.progressivePasses * 100,
+        unit: accurateProgressivePassesDefinition.unit,
+        normalization: accurateProgressivePassesDefinition.normalization,
+        sourceField: "渐进传球推算事件中统计 tag 1801；tag 1802 作为未完成（TactiScout 派生估计）",
+        sampleMinutes: profile.minutes,
+        sampleMatches: profile.appearanceMatchIds.size,
+      },
+    ]
+    : [];
   return PlayerProfileSchema.parse({
     playerId: `wyscout:${profile.player.id}:team:${profile.teamId}:competition:${profile.competitionId}:season:${profile.season}`,
     externalPlayerId: profile.player.id,
@@ -475,6 +544,7 @@ function buildPlayer(profile: MutablePlayer, retrievedAt: string, matchEventIds:
       keyPasses: profile.keyPasses,
     },
     availableStats: eventDataComplete ? PLAYER_STATS : [],
+    ...(supplementaryMetrics.length ? { supplementaryMetrics } : {}),
     eventDataComplete,
     sourceIdentity: {
       provider: "wyscout-open-data",
