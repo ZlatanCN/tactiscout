@@ -1,7 +1,7 @@
 # 把球探调查进度做成可读的阶段时间线
 
 Type: task
-Status: claimed
+Status: resolved
 Labels: ready-for-agent
 
 ## Goal

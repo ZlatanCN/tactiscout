@@ -854,7 +854,7 @@ export function createRecruitmentConversation(input: {
     .addNode("choose_next_action", async (state: State, config: LangGraphRunnableConfig) => {
       emitProgress(config, {
         stage: "planning",
-        message: state.decisionSteps === 0 ? "正在整理需求并规划调查步骤" : `已完成 ${state.decisionSteps} 个调查步骤，正在决定下一步`,
+        message: state.decisionSteps === 0 ? "正在整理需求并规划调查步骤" : "正在根据已收集的信息规划下一步调查",
         completedSteps: state.decisionSteps,
       });
       if (state.confirmedPosition && state.confirmedPositionSearchMatchCount === 0) {
