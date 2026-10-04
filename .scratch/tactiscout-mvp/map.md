@@ -71,7 +71,7 @@ Labels: wayfinder:map
 - [本地 API 连接状态](issues/44-explain-local-api-connection-state.md)：网页会清楚显示正在连接、服务端未连接或状态读取失败；断连时可重试，不再把服务错误显示为数据源未知。
 - [可复现的本地 Ollama 启动说明](issues/45-reproducible-local-ollama-setup.md)：README 给出官方 OpenAI-compatible 地址、占位 key、模型名和历史快照启动步骤，不依赖某台机器的 `.env`。
 - [作品集架构总览](issues/46-portfolio-architecture-overview.md)：README Mermaid 图按实际代码展示 LangGraph 工具循环、同案中断恢复、Reviewer、权限感知检索、数据查询契约及两类本地持久化。
-- [API-Football 免费档近季 smoke](issues/47-api-football-free-current-season-smoke.md)：官方资料确认其免费档每日本身有请求额度且提供 `/players` 常规表现字段；但 2026/27 赛季覆盖需用真实账号确认，公开展示许可未获授，持久化/送入 Ollama 权限也不明确。暂只考虑用户 key 下、本机单页、内存 smoke，不新增未经验证的 provider adapter。
+- [API-Football 免费档近季 smoke](issues/47-api-football-free-current-season-smoke.md)：新增 `pnpm source:smoke:api-football` 本机脱敏预检，最多检查 3 个端点、不保存或交给模型；执行仍需用户 key。免费赛季覆盖按真实账号确认，公开展示许可未获授，持久化/送入 Ollama 权限也不明确，因此暂不新增未经验证的 provider adapter。
 
 - [把球探调查进度做成可读的阶段时间线](issues/30-readable-investigation-progress.md)：每轮显示实际 LangGraph 阶段事件、重复阶段次数与耗时，不把流程阶段伪装成完成比例或推荐质量。
 

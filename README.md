@@ -127,6 +127,8 @@ API 默认只绑定 `127.0.0.1`，并拒绝非本机 `Host`、非本机网页 `O
 
 不把对球探网站批量抓取当成默认路线；来源必须支持项目所需的获取、保存、计算和模型处理用途。当前没有免费、许可清楚、最新、覆盖主要联赛且含细粒度能力指标的单一来源。StatsBomb 2023/24 德甲开放样本只有 34 场，适合特定案例分析，不足以作为完整联赛候选池。完整路线和候选数据集调查见 [issue 40](.scratch/tactiscout-mvp/issues/40-tactiscout-owned-scouting-dataset.md) 与[自建数据集调查](.scratch/tactiscout-mvp/research/self-built-scouting-dataset-feasibility-2026-10.md)。
 
+API-Football 可用一个受限的本机 smoke 检查账户是否能读某联赛近季球员统计；它尚未接入候选调查。设置 `.env` 中的 `API_FOOTBALL_API_KEY`、`API_FOOTBALL_LEAGUE_ID` 和 `API_FOOTBALL_SEASON` 后运行 `pnpm source:smoke:api-football`。命令最多发出 3 次顺序请求，只输出账户方案/剩余额度、联赛覆盖、首屏分页和指标字段完整度；不打印球员姓名或原始响应、不保存数据，也不调用模型。免费赛季覆盖必须按账户实查；[官方条款](https://www.api-football.com/terms)未授予在应用或网站发布 API 数据的许可，所以这项检查不会启用公开数据展示。
+
 第一方观察使用[单场采集规程](docs/scouting/first-party-observation-protocol.md)：建议先用单一赛事/赛季的 6 名中锋做 12 条球员—比赛样本，并对 3 条样本进行独立双人记录。工作台显示记录数、比赛上下文完整度和能力维度覆盖；小样本只用于案例比较，不代表球员市场或评分信度。
 
 <details>

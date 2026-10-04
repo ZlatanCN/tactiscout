@@ -36,7 +36,8 @@ Determine whether a user-owned API-Football free account can serve one current-s
 ## Comments
 
 - 2026-10-04：现有 Reep crosswalk 已包含 API-Football player IDs，但这不证明当前账号覆盖、live 记录命中或 API 数据使用权限。先验证真实 free account 一页，不新增未经 live 验证的 provider adapter。
+- 2026-10-04：新增 `pnpm source:smoke:api-football` 本机预检。它最多顺序请求 `/status`、`/leagues` 和 `/players?page=1`，只输出脱敏字段覆盖摘要，不持久化、不交给模型。真实账号/赛季与 schema smoke 仍待用户提供本地 key。
 
 ## Answer
 
-等待用户在本机准备单个免费 API key。将 key 放在本地环境变量后告知我已准备好即可；无需在聊天中粘贴 key。
+脱敏预检命令已实现，等待用户在本机准备单个免费 API key。将 key 放在本地 `.env` 后告知我已准备好即可；无需在聊天中粘贴 key。
