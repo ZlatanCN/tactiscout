@@ -20,6 +20,7 @@
     "identity:reep": "tsx src/identity/cli.ts",
     "dataset:build": "node --import tsx src/dataset/build-cli.ts",
     "dataset:refresh": "node --import tsx src/dataset/refresh-cli.ts",
+    "dataset:refresh:skillcorner": "node --import tsx src/dataset/refresh-skillcorner-cli.ts",
     "start": "node dist/index.js"
   },
   "dependencies": {

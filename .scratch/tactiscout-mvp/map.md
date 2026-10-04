@@ -121,6 +121,7 @@ Labels: wayfinder:map
 - Reep 本地 crosswalk 只证明来源 ID 与 API-Football ID 的可映射比例，不证明 PlayerElo endpoint 命中。固定 release 已完成导入并用 2,561 个 Wyscout ID 验证 resolver；真实 PlayerElo 请求仍需 key 和许可确认。
 - Reep resolver 已导入 `20261003T052950Z` release，并对一个 Sportmonks ID 完成 Wyscout 本地档案 smoke。StatsBomb/SkillCorner 和真实候选池的 provider bridge 覆盖率、live Sportmonks API 联调及 snapshot 更新流程仍待验证。
 - 近期开放数据来源复核见[研究报告](research/recent-open-player-performance-data-2026-10.md)：SkillCorner 真实 CSV 的数据许可范围仍需确认；IDSSE 仅作七场历史方法基准，不扩大默认球员排名池；OpenLigaDB 不提供能力评分所需的比赛分钟和细粒度表现指标。
+- SkillCorner 2024/25 A-League 三份聚合 CSV 已由 `pnpm dataset:refresh:skillcorner` 从固定官方 commit 校验并获取到 Git 忽略的本机 `.data/`，没有进入 Git；应用权限 gate 仍关闭。来源边界与后续步骤见[来源特定的可追溯表现指标](issues/24-supplementary-performance-evidence.md)。
 
 ## Out of scope
 

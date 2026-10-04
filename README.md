@@ -112,7 +112,7 @@ provider 记录保留 Sportmonks 的球员、球队、赛事和赛季 ID，以�
 
 Sportmonks adapter 的 endpoint 映射和 fixture 测试不依赖在线服务；真实联赛、套餐权限和返回字段仍须使用用户自己的 API token 验证。没有完成该账号联调前，不能把 Sportmonks 模式描述为已验证的真实数据结果。
 
-SkillCorner Open Data 可作为可选的历史指标样例。当前 adapter 只读取本地的 2024/25 澳大利亚 A-League physical、passing 和 off-ball-run aggregate CSV；不会下载数据，也不会把原始球员数据放进仓库。手动取得文件后，放入 `.data/skillcorner-open-data/aggregates/`，文件名须为 `aus1league_physicalaggregates_20242025.csv`、`aus1league_passingaggregates_20242025.csv` 和 `aus1league_obraggregates_20242025.csv`。该目录已由 `.data/` 忽略。
+SkillCorner Open Data 可作为可选的历史指标样例。它包含 2024/25 澳大利亚 A-League 的 physical、passing 和 off-ball-run 球员赛季 aggregate CSV。运行 `pnpm dataset:refresh:skillcorner` 可从固定的官方 Git commit 获取这三个文件，逐个核对来源字节数与 SHA-256，并在 `.data/skillcorner-open-data/provenance.json` 记录版本、署名、来源链接和校验值。CSV 与 provenance 都留在 `.data/`，不提交到仓库；命令不会开启 SkillCorner 模式或任何应用权限开关。
 
 设置 `TACTISCOUT_DATA_MODE=skillcorner` 前，必须分别确认并设置 `TACTISCOUT_SKILLCORNER_LOCAL_STORAGE_ALLOWED=true`、`TACTISCOUT_SKILLCORNER_AI_PROCESSING_ALLOWED=true` 和 `TACTISCOUT_SKILLCORNER_REPORT_DISPLAY_ALLOWED=true`。SkillCorner README 称样例数据由 SkillCorner 与 PySport 开放发布并请求署名，但仓库 MIT 文本没有明确说明这些球员级 CSV、LLM 处理或公开作品集展示的适用范围；相关权限未确认时，三项开关都保持 `false`。当前只读取以下可追溯指标：每 90 分钟高强度跑动/冲刺距离与次数、每 30 分钟持球的身后/套边跑动与穿线传球、向跑动传球成功率。每条报告保留原始字段名、provider ID、位置组、赛事/赛季与样本；缺失数值仍是暂无数据。补充指标只作为原始表现证据，不纳入既有职责评分。SkillCorner CSV 只代表历史 A-League 样例，不是当前完整转会市场或欧洲候选池。[官方数据说明](https://github.com/SkillCorner/opendata/blob/master/README.md) · [仓库许可](https://github.com/SkillCorner/opendata/blob/master/LICENSE) · [官方聚合指标归一化教程](https://github.com/SkillCorner/opendata/blob/master/notebooks/tutorials/01_Getting_Started_with_SkillCorner_Data/DATA_NORMALIZATION_BASICS.md)。
 

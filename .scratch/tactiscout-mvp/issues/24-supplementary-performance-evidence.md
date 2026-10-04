@@ -27,10 +27,11 @@ See [additional player evidence sources](../research/additional-player-evidence-
 
 ## Answer
 
-本地 SkillCorner aggregate adapter 与 Agent evidence/report 支持已实现：解析只接受配置目录中的三个 CSV；provider 身份包含球员、球队、赛事、赛季和位置组；新指标仅可作为带单位、来源字段和样本范围的证据引用，不进入现有职责评分；旧版单轮启发式端点拒绝 SkillCorner 模式。合成 CSV fixture 已验证 CSV 解析、provider 身份拼接、缺失值、重复与冲突、位置映射、每 90 分钟归一化、三项独立 opt-in，以及推荐证据链。当前没有把真实 CSV 放入仓库或自动下载；真实来源数据读取和数据权利确认仍待完成，因此 issue 保持 claimed。
+本地 SkillCorner aggregate adapter 与 Agent evidence/report 支持已实现：解析只接受配置目录中的三个 CSV；provider 身份包含球员、球队、赛事、赛季和位置组；新指标仅可作为带单位、来源字段和样本范围的证据引用，不进入现有职责评分；旧版单轮启发式端点拒绝 SkillCorner 模式。合成 CSV fixture 已覆盖解析、身份拼接、缺失、重复与冲突、位置映射、每 90 分钟归一化、三项 opt-in，以及推荐证据链。现在可用 `pnpm dataset:refresh:skillcorner` 从固定上游版本获取真实 CSV 并生成本机 provenance；三份文件已在 `.data/` 中通过大小与 SHA-256 校验，没有进入 Git。由于数据 CSV 的公开展示与 LLM 处理范围仍未明确，应用 gate 保持关闭，真实数据报告链尚未启用，issue 保持 claimed。
 
 ## Comments
 
+- 2026-10-04：新增 `pnpm dataset:refresh:skillcorner`，固定到 SkillCorner 官方仓库提交 `4340d274572876239c154c90bc507a9b3250a656`，逐文件核验大小与 SHA-256，并在 Git 忽略的 `.data/skillcorner-open-data/` 留下来源清单。本机三份真实 CSV 均已校验；命令和数据文件不会开启 app 权限，也未把数据提交到仓库。它解决可复现获取，不代表 SkillCorner 明确授予公开展示或 LLM 处理权；相关 gate 仍关闭。
 - 2026-10-04：新增数据源调研认为 SkillCorner 是当前最有分析价值的公开样例，但原始球员级数据不进入仓库；先实现本地读取接口，并将本地保存、模型处理和报告展示设为三个独立 opt-in。
 - 2026-10-04：新增 `SkillCornerPlayerRepository`、7 个可追溯指标、位置组保守映射、报告样本列和三项默认关闭的使用开关。API / Web TypeScript 编译与 Web 生产构建通过；本轮未运行测试。真实来源文件、确认的保存/LLM/展示权利和确定性 adapter 测试仍未完成。
 - 2026-10-04：新增合成 CSV adapter 与完整推荐链路测试；覆盖 BOM、引号、按复合 provider identity 拼接、缺文件、重复/冲突、缺失指标、位置映射、年龄和 per90、三项独立授权，以及来源指标从文件进入最终报告且不虚构缺失事件指标。完整测试套件 111 项通过，API 与测试文件 TypeScript 检查通过，Web TypeScript/Vite 构建通过。没有读取真实 SkillCorner 文件；数据权利仍未确认。
