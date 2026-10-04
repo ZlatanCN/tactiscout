@@ -20,6 +20,8 @@ Labels: wayfinder:map
 - [Wyscout 真实数据 smoke test](research/wyscout-real-data-smoke-2026-10.md)记录对官方 Figshare 文件的本机联调结果：默认五大联赛共 2,682 条历史球员赛季记录，真实文件中的嵌套阵容与哨兵字段已由 adapter 覆盖；源文件哈希和出处保存在 Git 忽略目录。
 - [StatsBomb 射门质量证据调查](research/statsbomb-shot-quality-evidence-2026-10.md)核对官方 schema、事件样例和数据使用协议；建议只在本机派生并展示非点球 xG，缺字段不补零，公开分析前核实协议并附官方 logo。
 - [issue 32：面向按需调查的数据源查询契约](issues/32-query-scoped-player-source-contract.md)：对话 Agent 通过球队检查、候选分页、按 ID 评估和同组比较查询访问来源；在线 adapter 可不实现全库 `loadPlayers()`。PlayerElo 另有默认关闭的 LangGraph report-only 节点，只在证据审查后查询最终推荐，唯一姓名匹配才作为独立信号显示，不进入 LLM、战术评分或推荐顺序；因 SQLite checkpoint 和浏览器 localStorage 会保留报告快照，真实 key、展示权和本地保留权 opt-in 及 API smoke 待完成。
+- [Reep 数据源下一步调查](research/football-data-provider-next-step-2026-10.md)：Reep 最适合作为本地 CC0 provider-ID crosswalk，不是新统计源；先实现精确身份映射与 redirect 处理，再推进跨来源表现证据，不能按姓名合并。
+- [issue 33：Reep 跨来源身份注册表](issues/33-reep-cross-source-identity-registry.md)：已实现手动快照导入、只读精确 ID resolver 与 CLI；保留 rung、provider retirement、redirect 与 release stamp，不修改球员档案、不连接 LLM。真实 release 尚未下载或联调。
 - [issue 31：StatsBomb 非点球 xG 历史表现证据](issues/31-statsbomb-shot-quality-evidence.md)：使用 StatsBomb 原生逐射门 xG 派生球员非点球 xG/90 与 xG/射门，完整度、分母和本机模型处理门槛需可追溯。
 - [issue 28：Wyscout 渐进传球事件派生证据](issues/28-wyscout-progressive-pass-evidence.md)将方向推进指标标为 TactiScout 派生估计，明确 105 米换算假设、坐标与成功标签覆盖门槛；不把它并入既有职责评分。
 - [issue 29：Wyscout 地面防守对抗证据](issues/29-wyscout-defensive-duel-evidence.md)补充按 /90 观察对抗频次与明确胜出标签占比；中性标签保留在分母，不能改称抢断成功率或通常意义的胜率。
@@ -47,6 +49,7 @@ Labels: wayfinder:map
 
 ## Decisions-so-far
 - [面向按需调查的数据源查询契约](issues/32-query-scoped-player-source-contract.md)：保留 LangGraph 的工具选择与分页轨迹；provider 只执行结构化检索，远端总数未知时必须如实报告，硬条件不受支持时查询失败，不能加载全库或将失败伪装成空名单。PlayerElo 的 Elo/EAR 仅作为有来源的整体表现信号，不能替代 TactiScout 自己的战术评估。客户端不提供引援匹配分或估值接口；report-only 集成默认关闭，启用前仍需确认展示权、本地保留权及 API key。
+- [Reep 跨来源身份注册表](issues/33-reep-cross-source-identity-registry.md)：以 `(provider, namespace, external_id)` 精确映射 Reep ID；按 release redirects 解析合并 ID，撤销/隐藏 ID 不可解析为有效身份。同名不是身份凭据，映射不合并 provider 档案，也不作为表现证据。
 
 - [把球探调查进度做成可读的阶段时间线](issues/30-readable-investigation-progress.md)：每轮显示实际 LangGraph 阶段事件、重复阶段次数与耗时，不把流程阶段伪装成完成比例或推荐质量。
 
@@ -98,6 +101,7 @@ Labels: wayfinder:map
 - 当前来源发现只覆盖 PLOS 学术文章；通用网页搜索 provider、最终 embedding 模型和 RAG/Agent 评测阈值仍待验证。
 - 当前球员池的授权数据源、目标联赛覆盖，以及线上缓存/展示/外部 AI 使用范围。Sportmonks 凭据目前未配置；Wyscout 2017/18 公开数据只能支持历史表现分析验证。
 - PlayerElo API key、报告展示权和应用管理的本地保留权尚待确认；当前 report-only 节点不会向 Ollama 发送数据，所有开关默认关闭。若以后要将 PlayerElo 数据交给模型处理，需另行确认对应权限。
+- Reep resolver 已实现但尚未导入真实 release；目前仅为 StatsBomb、Wyscout、Sportmonks 和 SkillCorner 建索引。provider bridge 实际覆盖、命中率及每周 snapshot 更新流程仍待本机数据核验。
 
 ## Out of scope
 

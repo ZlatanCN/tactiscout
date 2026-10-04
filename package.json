@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.13.0"
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
@@ -17,6 +17,7 @@
     "knowledge:ingest": "tsx src/knowledge/cli.ts ingest",
     "knowledge:crawl": "tsx src/knowledge/cli.ts crawl",
     "knowledge:purge-source": "tsx src/knowledge/cli.ts purge-source",
+    "identity:reep": "tsx src/identity/cli.ts",
     "start": "node dist/index.js"
   },
   "dependencies": {

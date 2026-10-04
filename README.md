@@ -38,7 +38,7 @@ TactiScout 是一个 TypeScript 足球球探研究原型。用户用一句自然
 
 ## 启动
 
-需要 Node.js 22 或更高版本和 pnpm。安装依赖后，复制环境变量模板并配置模型服务：
+需要 Node.js 22.13 或更高版本和 pnpm。安装依赖后，复制环境变量模板并配置模型服务：
 
 ```bash
 pnpm install
@@ -111,6 +111,16 @@ TACTISCOUT_WYSCOUT_AI_PROCESSING_ALLOWED=false
 按需设置赛事 ID。只有确认配置的模型服务可以处理这些数据后才把 `TACTISCOUT_WYSCOUT_AI_PROCESSING_ALLOWED` 改为 `true`；本机 Ollama 可让原始数据留在本机。候选来源标明 Pappalardo 等人 2019 年数据集与 CC BY 4.0；公开展示派生数据时应附上[论文 DOI](https://doi.org/10.1038/s41597-019-0247-7)、[许可链接](https://creativecommons.org/licenses/by/4.0/)和修改说明。CC BY 不授予隐私或肖像等其他权利。
 
 Wyscout 事件指标映射为：射门事件的标签 101 计进球、标签 301 计助攻、标签 302 计关键传球；传球事件计尝试，标签 1801 计成功传球。旧版数据中的关键传球不是射门助攻，因此射门助攻在此来源中保持不可用。项目还会根据传球起终点的进攻方向 x 坐标推算渐进传球：起终点均在本方半场需前进至少 30 米，跨越中线需至少 15 米，均在对方半场需至少 10 米；换算假设 100 个坐标点对应 105 米。次数/90 和成功率是 TactiScout 派生估计，不是 Wyscout 原生字段；只在相关坐标和成功/失败标签完整时显示。防守端增加 Ground defending duel 子事件次数/90 和标签 703 的明确胜出占比；占比以 701/702/703 为分母并保留中性结果 702，所以不是抢断成功率或通常意义的对抗胜率。[Wyscout 防守对抗定义](https://dataglossary.wyscout.com/defensive_duel/)。首发球员按 90 分钟、换人按记录分钟近似计算出场分钟；不含补时，也未校正红牌等特殊情况，所以每 90 分钟指标只是近似值。[Wyscout v2 事件与标签定义](https://support.wyscout.com/matches-wyid-events) · [渐进传球定义](https://dataglossary.wyscout.com/progressive_pass/) · [当前 Wyscout 关键传球定义及旧版兼容说明](https://dataglossary.wyscout.com/key_pass/) · [传球与成功标签定义](https://dataglossary.wyscout.com/pass/)。这些记录只代表 2017/18 历史表现，不是现役球员池、当前俱乐部或转会可行性证据。
+
+Reep 可选本地注册表只用于跨来源身份映射，不提供球员表现、阵容或当前效力证据。需要时，从 [官方数据页](https://reep.football/data/)手动下载同一 release 的 `bridges.csv.gz`、`redirects.csv.gz` 和 release stamp；按页面给出的 `checksums.txt` 核对这两个文件后，再运行：
+
+```bash
+pnpm identity:reep import <bridges.csv.gz> <redirects.csv.gz> <release-stamp>
+pnpm identity:reep resolve-source statsbomb-open-data <player-id>
+pnpm identity:reep resolve-source wyscout-open-data <player-id>
+```
+
+索引默认写入 `.data/reep/identity.sqlite`，可由 `TACTISCOUT_REEP_IDENTITY_DB_PATH` 配置查询时使用的路径。导入会流式读取 gzip 文件，只收录当前 TactiScout provider 与已知球员 namespace 的精确 ID bridge，并原子替换本地索引；它不会自动下载快照、访问 Reep API 或发送 ID 给 LLM。结果会保留 release stamp、Reep 匹配依据 rung、来源 ID、其他来源 ID 和 provider retirement 状态；多个目标、Reep 标记为 `de_corroborated`/`withheld` 的身份不会被当作已解析。映射只关联身份，不合并球员档案、表现指标、能力评分或推荐。Reep 请求在项目中注明来源和 release stamp；CC0 许可不能替代第三方数据权利说明。[Reep 下载与版本说明](https://reep.football/data/) · [namespace 与 redirect 说明](https://reep.football/get-started/)。
 
 ## API
 
