@@ -45,7 +45,16 @@ pnpm install
 cp .env.example .env
 ```
 
-在 `.env` 设置 `OPENAI_API_KEY`、`OPENAI_MODEL` 和可选的 `OPENAI_BASE_URL`。模型单次决策默认最多等待 180 秒，可用 `OPENAI_TIMEOUT_MS` 在 1–600 秒内调整；模型请求不会隐式重试。连接 Ollama 等需要指定推理级别的兼容服务时，可设置 `OPENAI_REASONING_EFFORT`；例如 Qwen 可用 `none` 关闭额外思考输出，缩短工具决策等待。随后分别启动 API 和网页：
+如果使用本地 Ollama，先安装并启动 Ollama，然后准备模型（例如 `ollama run qwen3.5:9b`）。在 `.env` 中使用下列 OpenAI-compatible 设置：
+
+```env
+OPENAI_API_KEY=ollama
+OPENAI_MODEL=qwen3.5:9b
+OPENAI_BASE_URL=http://127.0.0.1:11434/v1/
+OPENAI_REASONING_EFFORT=none
+```
+
+Ollama 本地服务要求客户端提供 API key 字段，但会忽略这个占位值；`OPENAI_BASE_URL` 指向本机 `/v1/` 接口。[Ollama 官方兼容接口说明](https://docs.ollama.com/api/openai-compatibility)。其他兼容模型服务请使用该服务对应的 key、模型名和 base URL。模型单次决策默认最多等待 180 秒，可用 `OPENAI_TIMEOUT_MS` 在 1–600 秒内调整；模型请求不会隐式重试。随后分别启动 API 和网页：
 
 ```bash
 pnpm dev
@@ -67,7 +76,7 @@ API 默认只绑定 `127.0.0.1`，并拒绝非本机 `Host`、非本机网页 `O
 
 仓库提供 `pnpm dataset:refresh`，从 Figshare API 获取固定版本的 Wyscout 开放数据，核对 CC BY 4.0 元数据、文件大小与 MD5，再对本地原始文件计算 SHA-256 并构建快照。`pnpm dataset:build` 仍可在已有原始文件上离线重建。当前数据覆盖 2017/18 五大联赛 1,826 场比赛、98 支球队、2,561 名球员；它不是现役候选池。原始数据与 TactiScout 快照都留在 Git 忽略的 `.data/`，不随代码提交。
 
-当前本机 `.env` 仍可将 `TACTISCOUT_DATA_MODE` 设为 `curated`，读取历史快照并运行现有链路；处理该来源前需显式确认 `TACTISCOUT_WYSCOUT_AI_PROCESSING_ALLOWED=true`。Agent 和最终报告会说明快照赛季、指标口径与来源，并禁止将历史球队/年龄/表现说成当前事实。要支持当前球员推荐，仍需取得一份更近赛季、覆盖足够且许可允许项目用途的公开数据；在此之前，产品只提供历史表现分析。
+运行自建历史快照时，将 `TACTISCOUT_DATA_MODE=curated` 写入 `.env`，并先运行 `pnpm dataset:refresh` 生成本地快照。确认来源与本机模型使用范围适用于你的场景后，再显式设置 `TACTISCOUT_WYSCOUT_AI_PROCESSING_ALLOWED=true`。Agent 和最终报告会说明快照赛季、指标口径与来源，不会把历史球队、年龄或表现说成当前事实。该快照用于复现历史表现分析；支持当前球员推荐仍需接入一份覆盖足够且允许项目用途的近季来源。
 
 不把对球探网站批量抓取当成默认路线；来源必须支持项目所需的获取、保存、计算和模型处理用途。当前没有免费、许可清楚、最新、覆盖主要联赛且含细粒度能力指标的单一来源。StatsBomb 2023/24 德甲开放样本只有 34 场，适合特定案例分析，不足以作为完整联赛候选池。完整路线和候选数据集调查见 [issue 40](.scratch/tactiscout-mvp/issues/40-tactiscout-owned-scouting-dataset.md) 与[自建数据集调查](.scratch/tactiscout-mvp/research/self-built-scouting-dataset-feasibility-2026-10.md)。
 
