@@ -10,7 +10,7 @@ Let the Agent inspect additional, provider-specific player performance indicator
 
 ## Research basis
 
-See [additional player evidence sources](../research/additional-player-evidence-sources-2026-10.md). SkillCorner's 2024/25 A-League aggregates add physical, passing, and off-ball-run observations. The repository describes the data as open-sourced and asks for SkillCorner attribution, while its MIT license does not clearly identify the player-level CSV data, external LLM use, or public portfolio display as licensed material. The adapter must keep the files outside the repository and require explicit local-storage and model-processing settings. The app must describe the data as a historical A-League sample, never as current coverage or a European recruitment pool.
+See [additional player evidence sources](../research/additional-player-evidence-sources-2026-10.md) and the [recent open-data review](../research/recent-open-player-performance-data-2026-10.md). SkillCorner's 2024/25 A-League aggregates add physical, passing, and off-ball-run observations. The repository describes the data as open-sourced and asks for SkillCorner attribution, while its MIT license does not clearly identify the player-level CSV data, external LLM use, or public portfolio display as licensed material. The adapter must keep the files outside the repository and require explicit local-storage and model-processing settings. The app must describe the data as a historical A-League sample, never as current coverage or a European recruitment pool.
 
 ## Acceptance criteria
 
@@ -34,3 +34,4 @@ See [additional player evidence sources](../research/additional-player-evidence-
 - 2026-10-04：新增数据源调研认为 SkillCorner 是当前最有分析价值的公开样例，但原始球员级数据不进入仓库；先实现本地读取接口，并将本地保存、模型处理和报告展示设为三个独立 opt-in。
 - 2026-10-04：新增 `SkillCornerPlayerRepository`、7 个可追溯指标、位置组保守映射、报告样本列和三项默认关闭的使用开关。API / Web TypeScript 编译与 Web 生产构建通过；本轮未运行测试。真实来源文件、确认的保存/LLM/展示权利和确定性 adapter 测试仍未完成。
 - 2026-10-04：新增合成 CSV adapter 与完整推荐链路测试；覆盖 BOM、引号、按复合 provider identity 拼接、缺文件、重复/冲突、缺失指标、位置映射、年龄和 per90、三项独立授权，以及来源指标从文件进入最终报告且不虚构缺失事件指标。完整测试套件 111 项通过，API 与测试文件 TypeScript 检查通过，Web TypeScript/Vite 构建通过。没有读取真实 SkillCorner 文件；数据权利仍未确认。
+- 2026-10-04：官方仓库复核确认 2024/25 A-League 提供赛季聚合文件，但仓库 MIT 许可证文本描述的是 “Software”，未明确规定这些球员级 CSV 数据的许可范围。该来源依然最值得优先确认；没有明确答复前不导入真实文件，也不把它列为公开产品已具备的数据覆盖。细节见[近期开放球员表现数据复核](../research/recent-open-player-performance-data-2026-10.md)。

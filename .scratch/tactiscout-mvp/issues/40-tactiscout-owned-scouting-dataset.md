@@ -44,6 +44,7 @@ Blocked by: none
 - [来源分层与准入约束](39-layered-player-evidence.md)：适用于新采集器和补充证据。
 - [来源特定指标 ADR](../../../docs/adr/0003-source-specific-performance-evidence.md)：不同来源的指标必须保留定义与样本，不可按字段名称自动合并。
 - [自建数据集可行性调查](../research/self-built-scouting-dataset-feasibility-2026-10.md)：说明公开事件数据、第一方观察和当前球员池各自可支持的范围。
+- [近期开放球员表现数据复核](../research/recent-open-player-performance-data-2026-10.md)：核对 SkillCorner、IDSSE、StatsBomb、Impect、OpenLigaDB 等一手来源的时效、字段、覆盖与许可边界。
 - [第一方比赛观察采集规程](../../../docs/scouting/first-party-observation-protocol.md)：定义首个封闭试点、单场记录单位和评分边界。
 
 ## Comments
@@ -59,7 +60,8 @@ Blocked by: none
 - 2026-10-04：StatsBomb Open Data 2023/24 德甲比赛清单实核为 34 场，且 User Agreement 将其范围限于研究/分析，禁止对外提供原始数据及商业利用分析；暂不把它作为更完整候选集的升级来源。按 StatsBomb 官方清单确认的局部样本也不能被 UI 描述成完整联赛。
 - 2026-10-04：建立[第一方比赛观察采集规程](../../../docs/scouting/first-party-observation-protocol.md)，推荐首批以单一赛事/赛季的 6 名中锋、12 条球员—比赛样本起步，独立双人复核其中 3 条。观察工作台新增自采覆盖摘要；该摘要不按姓名推断身份，也不把档位转换成统计。
 - 2026-10-04：`curated` Agent 调查指令和结论指令现在明确声明其 Wyscout 2017/18 历史边界、来源署名及原生/派生指标区别；最终报告限制也包含相同口径。`pnpm build` 与 `git diff --check` 通过。
+- 2026-10-04：近期数据复核没有发现符合“较新、跨联赛、成年实名、细粒度能力指标、可明确复用”全部条件的免费主库。SkillCorner 2024/25 A-League 聚合指标值得优先核清数据 CSV 的许可范围，但本机无真实 CSV，MIT 文件的“Software”定义未明确覆盖数据；IDSSE/DFL–Sportec 的 CC BY 4.0 数据限 2022/23 七场，适合作为追踪/事件方法基准而非候选池；OpenLigaDB 只有射手与进球事实。详见[近期开放数据复核](../research/recent-open-player-performance-data-2026-10.md)。
 
 ## Answer
 
-进行中：Wyscout 历史事件数据现在可从固定 Figshare 版本重新获取、校验并构建为 TactiScout 快照；本机复建得到 2,682 条球员赛季记录、覆盖 1,826 场比赛。Agent 与最终报告已明确快照的历史范围和指标来源。下一步为当前球员推荐寻找比现有样本更新、覆盖足够且许可允许项目用途的原始数据；在此之前，产品只提供历史表现分析，不得将历史数据描述成最新球员池或完整市场。
+进行中：Wyscout 历史事件数据现在可从固定 Figshare 版本重新获取、校验并构建为 TactiScout 快照；本机复建得到 2,682 条球员赛季记录、覆盖 1,826 场比赛。近期一手来源复核仍未找到符合项目目标的免费广域、当前能力数据源。下一步先确认 SkillCorner 球员 CSV 是否允许本项目本地保存、模型处理和报告展示；若无法确认，则只考虑把 IDSSE 七场 CC BY 4.0 数据作为独立方法验证基准，不并入默认球员排名。在此之前，产品只提供历史表现分析，不得将历史数据描述成最新球员池或完整市场。
