@@ -110,6 +110,27 @@ function clockMinutes(value: unknown): number | undefined {
   return undefined;
 }
 
+function calculateLineupMinutes(positions: unknown[], matchEndMinute: number): { minutes: number; complete: boolean } {
+  if (!positions.length) return { minutes: 0, complete: false };
+  let minutes = 0;
+  let previousEnd: number | undefined;
+  let complete = true;
+  for (const rawPosition of positions) {
+    const position = asRecord(rawPosition);
+    const from = clockMinutes(position.from);
+    let to = clockMinutes(position.to);
+    if (to === undefined && position.end_reason === "Final Whistle" && matchEndMinute > 0) to = matchEndMinute;
+    if (from === undefined || to === undefined || to <= from) {
+      complete = false;
+      continue;
+    }
+    if (previousEnd !== undefined && Math.abs(from - previousEnd) > 1 / 60) complete = false;
+    minutes += to - from;
+    previousEnd = to;
+  }
+  return { minutes, complete };
+}
+
 function mapPosition(value: unknown): Position | undefined {
   const name = typeof value === "string" ? value.toLowerCase() : "";
   if (name.includes("goalkeeper")) return "GK";
@@ -186,6 +207,19 @@ function getMutable(players: Map<string, MutablePlayer>, key: string, seed: Omit
   return created;
 }
 
+function nonPenaltyShotXg(rawEvent: unknown): number | undefined {
+  const event = asRecord(rawEvent);
+  if (event.type?.name !== "Shot" || !Number.isInteger(event.period) || event.period < 1 || event.period > 4) return undefined;
+  const shot = asRecord(event.shot);
+  const shotType = asRecord(shot.type).name;
+  const xg = shot.statsbomb_xg;
+  if (typeof shotType !== "string" || !shotType.trim() || shotType === "Penalty") return undefined;
+  if (typeof xg !== "number" || !Number.isFinite(xg) || xg < 0 || xg > 1) return undefined;
+  if (event.player?.id === undefined || event.player?.id === null) return undefined;
+  if (typeof event.team?.name !== "string" || !event.team.name.trim()) return undefined;
+  return xg;
+}
+
 function hasCompleteStatsBombShotQuality(events: unknown[]): boolean {
   return events.every((rawEvent) => {
     const event = asRecord(rawEvent);
@@ -198,15 +232,7 @@ function hasCompleteStatsBombShotQuality(events: unknown[]): boolean {
     const shotType = asRecord(shot.type).name;
     if (typeof shotType !== "string" || !shotType.trim()) return false;
     if (shotType === "Penalty") return true;
-    const xg = shot.statsbomb_xg;
-    return typeof xg === "number"
-      && Number.isFinite(xg)
-      && xg >= 0
-      && xg <= 1
-      && event.player?.id !== undefined
-      && event.player?.id !== null
-      && typeof event.team?.name === "string"
-      && Boolean(event.team.name.trim());
+    return nonPenaltyShotXg(rawEvent) !== undefined;
   });
 }
 
@@ -226,6 +252,7 @@ async function loadStatsBombPlayers(): Promise<PlayerProfile[]> {
   const selectedCompetitions = new Set((process.env.TACTISCOUT_STATSBOMB_COMPETITION_IDS ?? "").split(",").map((value) => value.trim()).filter(Boolean));
   const selectedSeasons = new Set((process.env.TACTISCOUT_STATSBOMB_SEASON_IDS ?? "").split(",").map((value) => value.trim()).filter(Boolean));
   const players = new Map<string, MutablePlayer>();
+  const completeLineupCoverageByScope = new Map<string, boolean>();
 
   for (const matchFile of matchFiles) {
     const matches = matchRows(await readJson<unknown>(matchFile).catch(() => null));
@@ -239,6 +266,8 @@ async function loadStatsBombPlayers(): Promise<PlayerProfile[]> {
       const competition = String(match.competition?.competition_name ?? competitionNames.get(compId) ?? "StatsBomb Open Data");
       if (selectedCompetitions.size && !selectedCompetitions.has(compId)) continue;
       if (selectedSeasons.size && !selectedSeasons.has(seasonId)) continue;
+      const scopeKey = `${compId}:${seasonId}`;
+      completeLineupCoverageByScope.set(scopeKey, completeLineupCoverageByScope.get(scopeKey) ?? true);
       const eventFile = eventsById.get(matchId);
       const eventRows = eventFile ? await readJson<unknown>(eventFile).catch(() => undefined) : undefined;
       const eventDataAvailable = Array.isArray(eventRows) && eventRows.length > 0;
@@ -254,8 +283,18 @@ async function loadStatsBombPlayers(): Promise<PlayerProfile[]> {
         return Math.max(latest, minute + second / 60);
       }, 0);
       const lineupFile = lineupsById.get(matchId);
+      let lineups: any[] = [];
+      if (lineupFile) lineups = asList(await readJson<unknown>(lineupFile).catch(() => []));
+      const lineupFileComplete = lineups.length === 2 && lineups.every((teamLineup) => {
+        const lineup = asRecord(teamLineup).lineup;
+        return Array.isArray(lineup)
+          && lineup.length > 0
+          && lineup.every((player) => asRecord(player).player_id !== undefined && asRecord(player).player_id !== null);
+      });
+      if (!lineupFileComplete) completeLineupCoverageByScope.set(scopeKey, false);
+      const lineupPlayerKeys = new Set<string>();
+      const playersWithCompleteMinutes = new Set<string>();
       if (lineupFile) {
-        const lineups = asList(await readJson<unknown>(lineupFile).catch(() => []));
         for (const teamLineup of lineups) {
           const teamData = asRecord(teamLineup);
           const team = String(teamData.team_name ?? "Unknown team");
@@ -264,29 +303,10 @@ async function loadStatsBombPlayers(): Promise<PlayerProfile[]> {
             const id = String(player.player_id ?? "");
             const playerName = String(player.player_name ?? "Unknown player");
             const positions = asList(player.positions);
+            if (id) lineupPlayerKeys.add(`${id}:${team}`);
             const position = choosePosition(positions);
             if (!id || !position) continue;
-            let minutes = 0;
-            let latestCoveredMinute = 0;
-            let minuteDataComplete = true;
-            for (const stint of positions) {
-              const segment = asRecord(stint);
-              const from = clockMinutes(segment.from) ?? 0;
-              const to = clockMinutes(segment.to);
-              if (to !== undefined && to > from) {
-                minutes += to - from;
-                latestCoveredMinute = Math.max(latestCoveredMinute, to);
-              } else if (to !== undefined) {
-                minuteDataComplete = false;
-              } else if (segment.end_reason === "Final Whistle") {
-                if (from >= latestCoveredMinute && matchEndMinute > from) {
-                  minutes += matchEndMinute - from;
-                  latestCoveredMinute = matchEndMinute;
-                } else {
-                  minuteDataComplete = false;
-                }
-              }
-            }
+            const { minutes, complete: minuteDataComplete } = calculateLineupMinutes(positions, matchEndMinute);
             const teamId = teamData.team_id ?? asRecord(teamData.team).id;
             const recordId = [id, compId, season, team].join(":");
             const item = getMutable(players, recordId, {
@@ -298,6 +318,7 @@ async function loadStatsBombPlayers(): Promise<PlayerProfile[]> {
             item.shotMetricsComplete &&= shotMetricsComplete && minuteDataComplete;
             item.minutes += minutes;
             item.appearances.add(matchId);
+            if (minuteDataComplete) playersWithCompleteMinutes.add(`${id}:${team}`);
           }
         }
       }
@@ -316,6 +337,9 @@ async function loadStatsBombPlayers(): Promise<PlayerProfile[]> {
           playerId: recordId, sourcePlayerId: id, competitionId: compId, seasonId, name: playerName, team, position, competition, season, minutes: 0, eventDataComplete: true,
           shotMetricsComplete: true,
         });
+        const lineupKey = `${id}:${team}`;
+        const hasLineupEntry = lineupPlayerKeys.has(lineupKey);
+        item.shotMetricsComplete &&= shotMetricsComplete && hasLineupEntry && playersWithCompleteMinutes.has(lineupKey);
         const type = String(event.type?.name ?? "");
         const pass = asRecord(event.pass);
         if (type === "Pass") {
@@ -331,11 +355,8 @@ async function loadStatsBombPlayers(): Promise<PlayerProfile[]> {
         if (type === "Interception") item.interceptions += 1;
         if (type === "Shot") {
           if (event.shot?.outcome?.name === "Goal") item.goals += 1;
-          const shotType = event.shot?.type?.name;
-          const xg = event.shot?.statsbomb_xg;
-          if (Number.isInteger(event.period) && event.period >= 1 && event.period < 5
-            && shotType !== "Penalty"
-            && typeof xg === "number" && Number.isFinite(xg) && xg >= 0 && xg <= 1) {
+          const xg = nonPenaltyShotXg(rawEvent);
+          if (xg !== undefined && hasLineupEntry && playersWithCompleteMinutes.has(lineupKey)) {
             item.nonPenaltyXg += xg;
             item.nonPenaltyShots += 1;
           }
@@ -346,7 +367,8 @@ async function loadStatsBombPlayers(): Promise<PlayerProfile[]> {
 
   return [...players.values()].flatMap((item) => {
     if (!item.playerId || item.minutes <= 0) return [];
-    const supplementaryMetrics: SupplementaryPerformanceMetric[] = item.shotMetricsComplete
+    const completeLineupCoverage = completeLineupCoverageByScope.get(`${item.competitionId}:${item.seasonId}`) ?? false;
+    const supplementaryMetrics: SupplementaryPerformanceMetric[] = item.shotMetricsComplete && completeLineupCoverage
       ? ([
         ["statsbombNonPenaltyXgPer90", item.nonPenaltyXg * 90 / item.minutes],
         ["statsbombNonPenaltyXgPerShot", item.nonPenaltyShots > 0 ? item.nonPenaltyXg / item.nonPenaltyShots : null],
@@ -418,19 +440,9 @@ export class StatsBombRepository implements PlayerRepository {
   }
 }
 
-export class StatsBombProviderError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "StatsBombProviderError";
-  }
-}
-
 export function createRepository(): PlayerRepository {
   const mode = (process.env.TACTISCOUT_DATA_MODE ?? "demo").trim().toLowerCase();
   if (mode === "statsbomb") {
-    if (process.env.TACTISCOUT_STATSBOMB_AI_PROCESSING_ALLOWED !== "true") {
-      throw new StatsBombProviderError("StatsBomb mode is disabled until the public data agreement has been reviewed and local model processing is explicitly confirmed.");
-    }
     return new StatsBombRepository();
   }
   if (mode === "demo") return new DemoPlayerRepository();

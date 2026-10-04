@@ -1,6 +1,7 @@
 import { createChatModel, isChatModelTimeout, openAIRequestTimeoutMs } from "./chat-model.js";
 import { Annotation, Command, END, MemorySaver, START, StateGraph, interrupt, type BaseCheckpointSaver, type LangGraphRunnableConfig } from "@langchain/langgraph";
 import { z } from "zod/v4";
+import { isIP } from "node:net";
 import {
   CapabilityMetricDefinitions,
   SupplementaryCapabilityMetricDefinitions,
@@ -359,10 +360,33 @@ function compactConclusionHistory(history: ConversationHistoryEntry[]): Conversa
 }
 
 export class RecruitmentModelUnavailableError extends Error {
-  constructor() {
-    super("对话球探 Agent 尚未配置模型服务。请在服务端设置 OPENAI_API_KEY 和 OPENAI_MODEL。");
+  constructor(message = "对话球探 Agent 尚未配置模型服务。请在服务端设置 OPENAI_API_KEY 和 OPENAI_MODEL。") {
+    super(message);
     this.name = "RecruitmentModelUnavailableError";
   }
+}
+
+function isLoopbackModelEndpoint(value: string | undefined): boolean {
+  if (!value?.trim()) return false;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+    const hostname = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+    return hostname === "localhost"
+      || hostname.endsWith(".localhost")
+      || (isIP(hostname) === 4 && hostname.startsWith("127."))
+      || (isIP(hostname) === 6 && hostname === "::1");
+  } catch {
+    return false;
+  }
+}
+
+function assertStatsBombModelProcessingAllowed(repository: PlayerRepository): void {
+  if (repository.mode !== "statsbomb") return;
+  if (process.env.TACTISCOUT_STATSBOMB_AI_PROCESSING_ALLOWED === "true" && isLoopbackModelEndpoint(process.env.OPENAI_BASE_URL)) return;
+  throw new RecruitmentModelUnavailableError(
+    "StatsBomb 数据仅在审阅使用协议、明确开启本机处理，并将 OPENAI_BASE_URL 配置为本机 Ollama 等回环地址后，才可交给 Agent 处理。",
+  );
 }
 
 export class RecruitmentModelTimeoutError extends Error {
@@ -1431,6 +1455,7 @@ export function createRecruitmentConversation(input: {
 
   return {
     async turn({ threadId, message, expectsExistingState = false, onProgress }) {
+      assertStatsBombModelProcessingAllowed(repository);
       return withThreadTurnLock(threadId, async () => {
         if (onProgress) progressCallbacksByThread.set(threadId, onProgress);
         try {

@@ -55,7 +55,7 @@ Labels: wayfinder:map
 
 - [StatsBomb 射门质量证据调查](research/statsbomb-shot-quality-evidence-2026-10.md)：官方 schema 声明 `shot.statsbomb_xg` 与 `shot.type` 应用于所有射门，但历史记录仍逐场验证；非点球指标排除点球大战，公开分析需注明 StatsBomb 并使用官方 logo。
 
-- [StatsBomb 非点球 xG 历史表现证据](issues/31-statsbomb-shot-quality-evidence.md)：新增两个可追溯的 StatsBomb 派生指标，射门字段或阵容分钟区间不完整时不输出；样本分母可见，指标只作证据且不计入职责分。StatsBomb 模式的 Agent 模型处理默认关闭；本机无 StatsBomb 样本，真实文件联调待配置数据后完成。
+- [StatsBomb 非点球 xG 历史表现证据](issues/31-statsbomb-shot-quality-evidence.md)：新增两个可追溯的 StatsBomb 派生指标，射门字段、非空阵容覆盖、球员阵容归属或分钟区间不完整时不输出；样本分母可见，指标只作证据且不计入职责分。Agent 处理默认关闭，并要求模型地址为本机回环服务；本机无 StatsBomb 样本，真实文件联调待配置数据后完成。
 
 - [具名球员表现数据许可与验证路径](research/player-performance-data-licensing-2026-10.md)：以 Wyscout CC BY 4.0 历史比赛数据作为潜在的具名事件分析验证源；原始数据留在本机、保留署名并使用 Ollama。数据许可不授予隐私/肖像权，旧赛季不得用于当前引援事实。当前球员池仍需另一个经过账户与模型处理许可确认的实时 provider。
 - [新增球员与表现数据源调查](research/additional-player-data-options-2026-10.md)：TheSportsDB 有球队球员列表与球员资料/统计 endpoint，Terms 允许复制/修改官方 API 返回内容，付费计划明确适用于 apps/services；批准用于一次有 provenance 的 roster enrichment spike。公开产品中若使用应选择 $9/mo 档并署名，免费档仅用于开发验证。API 未公开 player-statistics schema、覆盖 SLA、球员字段更新时间、缓存期限或 LLM 权限；因此球员 stats、market value、wage 和 profile prose 当前不得评分，LLM 处理保持关闭，缓存周期需先问提供方。Afriskaut Apache-2.0 静态青年赛事数据可验证战术事件分析，但具名未成年资料不得公开或送模型，直到确认个人数据授权；Wikidata 仅用作低置信 crosswalk；FPL 自动采集不做。
