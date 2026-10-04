@@ -70,6 +70,7 @@ function reportFromLegacy(analysis: ScoutResponse, brief: string): RecruitmentRe
     tradeoffs: candidate.risks,
     focusEvidenceKeys: [],
     externalSignals: [],
+    historicalArchiveSamples: [],
     reportObservations: [],
     evidence: CapabilityMetricDefinitions.flatMap(({ key, label, unit }) => {
       const value = candidate.per90[key];
@@ -106,6 +107,14 @@ function reportFromLegacy(analysis: ScoutResponse, brief: string): RecruitmentRe
       status: "not_run",
       disabledReason: null,
       checkedCandidates: 0,
+      matchedCandidates: 0,
+      failedCandidates: 0,
+    },
+    historicalArchiveCoverage: {
+      status: "not_run",
+      disabledReason: null,
+      checkedCandidates: 0,
+      mappedCandidates: 0,
       matchedCandidates: 0,
       failedCandidates: 0,
     },

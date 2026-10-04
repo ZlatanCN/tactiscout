@@ -30,6 +30,7 @@ const completedProgressLabels: Partial<Record<RecruitmentProgressStage, string>>
   candidate_search: "已搜索候选球员",
   player_evaluation: "已评估候选球员表现",
   external_signal: "已核对外部表现信号",
+  historical_archive: "已核对跨来源历史表现样本",
   report_search: "已查找球员报告资料",
   synthesizing: "已汇总候选证据",
   review: "已核对推荐证据",
@@ -464,6 +465,7 @@ function RecruitmentReportView({ report, reportedAt, isWaiting }: { report: Recr
       ].filter(Boolean).join(" · ") || "未设位置、年龄或赛事赛季限制"}</li>)}</ul></section>}
       <section className="evidence-coverage"><span className="report-section-label">证据覆盖</span><p>已评估 {report.evidenceCoverage.evaluatedCandidateCount} 名候选 · 指标值 {report.evidenceCoverage.availableMetricValues} / {report.evidenceCoverage.expectedMetricValues} 项 · 小样本 {report.evidenceCoverage.lowSampleCandidates} 人 · 同组比较受限 {report.evidenceCoverage.limitedPeerGroupCandidates} 人</p><small>说明当前数据覆盖和样本情况，不代表推荐正确率。</small></section>
       <section className="external-signal-coverage"><span className="report-section-label">独立外部信号 · PlayerElo</span><p>{externalSignalCoverageText(report.externalSignalCoverage)}</p><small>仅作整体表现参考；不进入战术能力评分、候选排序或 Agent 结论。</small></section>
+      <section className="external-signal-coverage historical-archive-coverage"><span className="report-section-label">跨来源历史表现样本 · Wyscout</span><p>{historicalArchiveCoverageText(report.historicalArchiveCoverage)}</p><small>只有 Reep 精确 ID 映射成功才会关联；2017/18 档案仅供纵向背景参考，不进入本轮能力评分、推荐排序或 Agent 结论。</small></section>
       <section className="knowledge-coverage"><span className="report-section-label">资料检索</span><p>角色/方法片段 {report.knowledgeCoverage.methodologyChunksRetrieved} 条{report.knowledgeCoverage.methodologySearchFailed ? "（检索失败）" : ""} · 球员报告 {report.knowledgeCoverage.playerReportChunksRetrieved} 条{report.knowledgeCoverage.playerReportSearchFailed ? "（检索失败）" : report.knowledgeCoverage.playerReportSearchPerformed ? "（已在表现评估后检索）" : "（未检索）"}</p><small>球员报告只补充定性观察，不直接计入能力评分；关联比赛指标也不代表整条观察已证实。</small></section>
       <div className="recommendation-heading"><div><span className="report-section-label">候选推荐</span><p>名单顺序是建议的后续考察优先级，不是客观能力排名；每项依据都来自可观察数据。</p></div><span className="results-count">{String(report.recommendations.length).padStart(2, "0")} <small>球员</small></span></div>
       {report.recommendations.length ? <>
@@ -546,6 +548,19 @@ function RecommendationCard({ recommendation, rank, selected, selectionDisabled,
         <small>按唯一规范化姓名匹配；请核对球员身份和来源当前球队。更新于 {formatDate(signal.retrievedAt)}。</small>
         <a href="https://playerelo.football/" target="_blank" rel="noreferrer">PlayerElo · 模型说明与来源</a>
       </section>)}
+      {recommendation.historicalArchiveSamples.length > 0 && <section className="historical-archive-samples">
+        <strong className="evidence-label">历史表现样本 · Wyscout Open Data</strong>
+        <p>以下是 Reep release {recommendation.historicalArchiveSamples[0]!.identityLink.reepReleaseStamp} 按来源球员 ID 精确关联到的历史记录。该数据代表对应旧赛季，不表示当前效力或当前能力。</p>
+        <ul>{recommendation.historicalArchiveSamples.map((sample) => <li key={`${sample.providerPlayerId}:${sample.competition}:${sample.season}:${sample.team}`}>
+          <b>{sample.season} · {sample.competition}</b><span>{sample.team} · {sample.minutes.toLocaleString()} 分钟</span>
+          {sample.metrics.length > 0 && <div className="archive-metrics">{sample.metrics.map((metric) => <span key={metric.key}>{metric.label} <b>{formatMetric(metric.value)} {metric.unit}</b><small>{metric.definition}</small></span>)}</div>}
+          <small>跨源 ID {sample.identityLink.sourceProvider}:{sample.identityLink.sourcePlayerId} ↔ Wyscout:{sample.providerPlayerId} · Reep rung {sample.identityLink.sourceRung ?? "未提供"} → {sample.identityLink.archiveRung ?? "未提供"}</small>
+          <small>映射状态 {sample.identityLink.sourceUpstreamStatus ?? "未提供"} → {sample.identityLink.archiveUpstreamStatus ?? "未提供"} · release {sample.identityLink.reepReleaseStamp}</small>
+          <small>{sample.attribution}</small>
+          <small>许可：<a href={sample.licenseUrl} target="_blank" rel="noreferrer">{sample.license}</a></small>
+          <a href={sample.sourceUrl} target="_blank" rel="noreferrer">打开论文与数据集出处</a>
+        </li>)}</ul>
+      </section>}
       {recommendation.evidence.length > 0 && <div className="evidence-table-wrap"><table className="evidence-table"><thead><tr><th>可观测指标</th><th>数值</th><th>对比组</th><th>来源样本</th></tr></thead><tbody>{recommendation.evidence.map((evidence) => <tr key={evidence.key}><th scope="row">{evidence.label}{recommendation.focusEvidenceKeys.includes(evidence.key) && <small className="focus-evidence-tag">本轮重点</small>}{evidence.definition && <small className="evidence-description">{evidence.definition}</small>}</th><td>{formatMetric(evidence.value)} {evidence.unit}</td><td>{evidence.peerPercentile === null ? `样本 ${evidence.peerGroupSize} 人，不显示百分位` : `第 ${evidence.peerPercentile} 百分位 · ${evidence.peerGroupSize} 人`}</td><td>{evidence.sampleMatches === undefined ? "—" : `${evidence.sampleMatches} 场 · ${Math.round(evidence.minutes)} 分钟`}{evidence.sampleAttempts !== undefined && <small>{evidence.sampleAttempts} 次非点球射门</small>}{evidence.sourceField && <small>{evidence.sourceField}</small>}</td></tr>)}</tbody></table></div>}
       {recommendation.reportObservations.length > 0 && <section className="report-observations"><strong className="evidence-label">球员定性观察</strong><ul>{recommendation.reportObservations.map((observation, index) => {
         const firstParty = observation.source.sourceId === firstPartyObservationSourceId;
@@ -581,6 +596,24 @@ function externalSignalCoverageText(coverage: RecruitmentReport["externalSignalC
   if (coverage.status === "complete") return `${summary}；查询完整。未匹配项不会按零分处理。`;
   if (coverage.status === "partial") return `${summary}；${coverage.failedCandidates} 人查询失败。未匹配项不会按零分处理。`;
   return `${summary}；外部查询失败，未匹配项不会按零分处理。`;
+}
+
+function historicalArchiveCoverageText(coverage: RecruitmentReport["historicalArchiveCoverage"]): string {
+  if (coverage.status === "disabled") {
+    switch (coverage.disabledReason) {
+      case "report_display_not_allowed": return "未开启 Wyscout 历史档案的报告展示许可，当前未读取。";
+      case "local_retention_not_allowed": return "未开启本机案件与报告快照保留许可，当前未读取。";
+      case "reep_index_missing": return "本机未找到 Reep 身份索引；手动导入官方 release 后才能进行精确跨源关联。";
+      case "wyscout_archive_missing": return "本机没有可读取的 Wyscout 历史档案文件。";
+      case "primary_source_is_archive": return "当前候选本身来自 Wyscout 历史档案；不重复附加同一来源记录。";
+      default: return "历史档案当前未启用。";
+    }
+  }
+  if (coverage.status === "not_run") return "本轮未查询；历史样本仅在结论通过证据审查后查询。";
+  const summary = `核对 ${coverage.checkedCandidates} 名候选，Reep 映射到 Wyscout ${coverage.mappedCandidates} 人，找到历史样本 ${coverage.matchedCandidates} 人`;
+  if (coverage.status === "complete") return `${summary}。`;
+  if (coverage.status === "partial") return `${summary}；来源 ID 未映射或本机档案未覆盖的候选会保持缺失。`;
+  return `${summary}；本机档案读取失败，未将历史值当作零。`;
 }
 
 function formatDate(value: string): string {

@@ -14,6 +14,8 @@ import {
   type DatasetMode,
   type DatasetScope,
   type ExternalSignalCoverage,
+  type HistoricalArchiveCoverage,
+  type HistoricalArchiveSample,
   type Position,
   type ConversationTurnResponse,
   type PlayerProfile,
@@ -23,6 +25,7 @@ import {
 import { inspectTeamPlayers, loadComparisonPlayers, loadPlayersByIds, searchPlayerPage, type PlayerRepository } from "../data/provider.js";
 import { createConfiguredPlayerEloReportClient } from "../data/playerelo-client.js";
 import { enrichPlayerEloSignals } from "../data/playerelo-enrichment.js";
+import { createConfiguredHistoricalArchive } from "../data/historical-archive-enrichment.js";
 import { describeDatasetScope } from "../domain/dataset-scope.js";
 import { positionMatches } from "../domain/positions.js";
 import { normalizeSearchText } from "../domain/text-matching.js";
@@ -456,6 +459,15 @@ const RecruitmentState = Annotation.Root({
     matchedCandidates: 0,
     failedCandidates: 0,
   })),
+  historicalArchiveSamplesByPlayerId: replaceable<Record<string, HistoricalArchiveSample[]>>(() => ({})),
+  historicalArchiveCoverage: replaceable<HistoricalArchiveCoverage>(() => ({
+    status: "not_run",
+    disabledReason: null,
+    checkedCandidates: 0,
+    mappedCandidates: 0,
+    matchedCandidates: 0,
+    failedCandidates: 0,
+  })),
   targetTeam: replaceable<string | null>(() => null),
   confirmedPosition: replaceable<Position | null>(() => null),
   confirmedPositionSearchMatchCount: replaceable<number | null>(() => null),
@@ -856,6 +868,7 @@ export function createRecruitmentConversation(input: {
   const { repository, planner, observer } = input;
   const knowledgeBase = input.knowledgeBase ?? createLocalKnowledgeBase();
   const playerEloSetup = createConfiguredPlayerEloReportClient();
+  const historicalArchiveSetup = createConfiguredHistoricalArchive();
   const disabledPlayerEloCoverage: ExternalSignalCoverage = playerEloSetup.status === "disabled"
     ? {
       status: "disabled",
@@ -886,6 +899,8 @@ export function createRecruitmentConversation(input: {
         report: null,
         externalSignals: {},
         externalSignalCoverage: disabledPlayerEloCoverage,
+        historicalArchiveSamplesByPlayerId: {},
+        historicalArchiveCoverage: historicalArchiveSetup.coverage,
         responseMessage: "",
         pendingQuestion: null,
         decisionSteps: 0,
@@ -1458,6 +1473,37 @@ export function createRecruitmentConversation(input: {
         } satisfies ExternalSignalCoverage,
       };
     })
+    .addNode("enrich_historical_archive", async (state: State, config: LangGraphRunnableConfig) => {
+      if (repository.mode === "wyscout") {
+        return {
+          historicalArchiveCoverage: {
+            ...historicalArchiveSetup.coverage,
+            status: "disabled" as const,
+            disabledReason: "primary_source_is_archive" as const,
+          },
+        };
+      }
+      if (historicalArchiveSetup.status !== "ready" || state.action?.action !== "finish") {
+        return { historicalArchiveCoverage: historicalArchiveSetup.coverage };
+      }
+      const eligibleEvaluatedPlayers = evaluatedPlayersForConstraint(state);
+      const players = state.action.recommendations.flatMap(({ playerId }) => {
+        const candidate = eligibleEvaluatedPlayers[playerId];
+        return candidate ? [candidate.player] : [];
+      });
+      if (!players.length) return { historicalArchiveCoverage: historicalArchiveSetup.coverage };
+
+      emitProgress(config, {
+        stage: "historical_archive",
+        message: `正在用 Reep 精确身份映射核对 ${players.length} 名候选的 Wyscout 历史样本`,
+        completedSteps: state.decisionSteps,
+      });
+      const result = await historicalArchiveSetup.enrich(players);
+      return {
+        historicalArchiveSamplesByPlayerId: result.samplesByPlayerId,
+        historicalArchiveCoverage: result.coverage,
+      };
+    })
     .addNode("deliver_recommendation", (state: State) => {
       const action = state.action?.action === "finish" ? state.action : emptyDecision(state.targetTeam);
       const eligibleEvaluatedPlayers = evaluatedPlayersForConstraint(state);
@@ -1480,6 +1526,7 @@ export function createRecruitmentConversation(input: {
           focusEvidenceKeys: item.evidenceKeys,
           evidence: evaluated.evidence,
           externalSignals: state.externalSignals[item.playerId] ? [state.externalSignals[item.playerId]!] : [],
+          historicalArchiveSamples: state.historicalArchiveSamplesByPlayerId[item.playerId] ?? [],
           reportObservations: action.reportObservations.filter((observation) => observation.playerId === item.playerId
             && Object.hasOwn(eligibleEvaluatedPlayers, observation.playerId)).flatMap((observation) => {
             const document = Object.values(state.retrievedKnowledge).find((candidate) => candidate.documentId === observation.documentId);
@@ -1520,6 +1567,7 @@ export function createRecruitmentConversation(input: {
           };
         })(),
         externalSignalCoverage: state.externalSignalCoverage,
+        historicalArchiveCoverage: state.historicalArchiveCoverage,
         knowledgeCoverage: {
           methodologyChunksRetrieved: retrievedDocuments.filter((document) => document.corpus === "methodology").length,
           methodologySearchFailed: state.methodologySearchFailed,
@@ -1553,16 +1601,19 @@ export function createRecruitmentConversation(input: {
     .addConditionalEdges("review_recommendation", (state: State) => {
       if (state.reviewResult === "retry") return "retry";
       if (state.reviewResult === "valid"
-        && playerEloSetup.client
         && state.action?.action === "finish"
-        && state.action.recommendations.length > 0) return "enrich";
+        && state.action.recommendations.length > 0) {
+        return playerEloSetup.client ? "enrich_external" : "enrich_archive";
+      }
       return "deliver";
     }, {
       retry: "choose_next_action",
-      enrich: "enrich_external_signals",
+      enrich_external: "enrich_external_signals",
+      enrich_archive: "enrich_historical_archive",
       deliver: "deliver_recommendation",
     })
-    .addEdge("enrich_external_signals", "deliver_recommendation")
+    .addEdge("enrich_external_signals", "enrich_historical_archive")
+    .addEdge("enrich_historical_archive", "deliver_recommendation")
     .addEdge("deliver_recommendation", END)
     .compile({ checkpointer: input.checkpointer ?? new MemorySaver() });
 

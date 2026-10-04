@@ -23,7 +23,7 @@ export interface ImportReepReleaseResult {
 
 interface Redirect {
   toId: string | null;
-  reason: "merged" | "de_corroborated" | "withheld";
+  reason: "merged" | "de_corroborated" | "withheld" | "target_not_published";
 }
 
 function parseCsvLine(line: string, filePath: string, lineNumber: number): string[] {
@@ -160,7 +160,7 @@ export async function importReepRelease(options: ImportReepReleaseOptions): Prom
       CREATE TABLE redirects (
         from_id TEXT PRIMARY KEY,
         to_id TEXT,
-        reason TEXT NOT NULL CHECK (reason IN ('merged', 'de_corroborated', 'withheld'))
+        reason TEXT NOT NULL CHECK (reason IN ('merged', 'de_corroborated', 'withheld', 'target_not_published'))
       );
       CREATE TABLE bridges (
         provider TEXT NOT NULL,
@@ -168,7 +168,7 @@ export async function importReepRelease(options: ImportReepReleaseOptions): Prom
         external_id TEXT NOT NULL,
         source_reep_id TEXT NOT NULL,
         canonical_reep_id TEXT,
-        redirect_status TEXT NOT NULL CHECK (redirect_status IN ('resolved', 'de_corroborated', 'withheld')),
+        redirect_status TEXT NOT NULL CHECK (redirect_status IN ('resolved', 'de_corroborated', 'withheld', 'target_not_published')),
         rung TEXT,
         upstream_status TEXT
       );
@@ -180,7 +180,7 @@ export async function importReepRelease(options: ImportReepReleaseOptions): Prom
       const fromId = required(row, "from_id", options.redirectsPath);
       const reason = required(row, "reason", options.redirectsPath);
       const toId = optional(row, "to_id");
-      if (reason !== "merged" && reason !== "de_corroborated" && reason !== "withheld") {
+      if (reason !== "merged" && reason !== "de_corroborated" && reason !== "withheld" && reason !== "target_not_published") {
         throw new Error(`${options.redirectsPath} contains unsupported redirect reason ${reason}.`);
       }
       if ((reason === "merged") !== Boolean(toId)) {

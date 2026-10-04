@@ -122,6 +122,8 @@ pnpm identity:reep resolve-source wyscout-open-data <player-id>
 
 索引默认写入 `.data/reep/identity.sqlite`，可由 `TACTISCOUT_REEP_IDENTITY_DB_PATH` 配置查询时使用的路径。导入会流式读取 gzip 文件，只收录当前 TactiScout provider 与已知球员 namespace 的精确 ID bridge，并原子替换本地索引；它不会自动下载快照、访问 Reep API 或发送 ID 给 LLM。结果会保留 release stamp、Reep 匹配依据 rung、来源 ID、其他来源 ID 和 provider retirement 状态；多个目标、Reep 标记为 `de_corroborated`/`withheld` 的身份不会被当作已解析。映射只关联身份，不合并球员档案、表现指标、能力评分或推荐。Reep 请求在项目中注明来源和 release stamp；CC0 许可不能替代第三方数据权利说明。[Reep 下载与版本说明](https://reep.football/data/) · [namespace 与 redirect 说明](https://reep.football/get-started/)。
 
+完成本地 Reep 索引后，可选择开启报告中的 Wyscout 历史样本：设置 `TACTISCOUT_WYSCOUT_ARCHIVE_DIR` 指向已下载的 Wyscout Open Data 目录，并在确认展示与本机报告保留范围后，将 `TACTISCOUT_WYSCOUT_HISTORICAL_REPORT_DISPLAY_ALLOWED` 和 `TACTISCOUT_WYSCOUT_HISTORICAL_LOCAL_RETENTION_ALLOWED` 都设为 `true`。该 enrichment 只在结论通过审查后运行，通过当前球员来源 ID → Reep ID → Wyscout player ID 精确关联；它不会按姓名匹配、发送给 LLM、进入能力评分或改变推荐顺序。报告逐条显示历史赛季、赛事、球队、分钟、可用统计、CC BY 4.0 署名及 Reep release/rung。未配置许可、索引或 Wyscout 文件时保持关闭或明确报告缺失；部分 bridge 覆盖会显示为部分匹配，不把无命中当成零表现。Reep 的 provider coverage 是按赛事部分覆盖，[官方覆盖表](https://www.reep.football/coverage/)不能据此推断每名候选人都有历史记录。
+
 ## API
 
 `POST /api/v1/recruitment/cases/:caseId/turns` 接受 `{ "message": "..." }`，返回 `needs_input` 或 `completed`。追问回答使用同一个 `caseId`，以恢复同一 LangGraph 案件。

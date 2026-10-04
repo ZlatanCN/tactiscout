@@ -20,6 +20,7 @@ export type ReepResolutionStatus =
   | "not_found"
   | "de_corroborated"
   | "withheld"
+  | "target_not_published"
   | "unsupported_provider";
 
 export interface ReepBridge {
@@ -33,7 +34,7 @@ export interface ReepBridge {
 export interface ReepMatchedBridge extends ReepBridge {
   sourceReepId: string;
   canonicalReepId: string | null;
-  redirectStatus: "resolved" | "de_corroborated" | "withheld";
+  redirectStatus: "resolved" | "de_corroborated" | "withheld" | "target_not_published";
 }
 
 export interface ReepIdentityResolution {
@@ -48,7 +49,7 @@ export interface ReepIdentityResolution {
 interface StoredBridge {
   sourceReepId: string;
   canonicalReepId: string | null;
-  redirectStatus: "resolved" | "de_corroborated" | "withheld";
+  redirectStatus: "resolved" | "de_corroborated" | "withheld" | "target_not_published";
   rung: string | null;
   upstreamStatus: string | null;
 }
@@ -121,7 +122,7 @@ export class ReepIdentityRegistry {
     const rawRows = this.sourceLookup.all(provider, namespace, externalId);
     const rows: StoredBridge[] = rawRows.map((row) => {
       const redirectStatus = requiredText(row, "redirectStatus");
-      if (redirectStatus !== "resolved" && redirectStatus !== "de_corroborated" && redirectStatus !== "withheld") {
+      if (redirectStatus !== "resolved" && redirectStatus !== "de_corroborated" && redirectStatus !== "withheld" && redirectStatus !== "target_not_published") {
         throw new Error("Reep identity index has an unknown redirect status.");
       }
       return {

@@ -81,7 +81,8 @@ export class WyscoutProviderError extends Error {
 
 export interface WyscoutRepositoryOptions {
   dataDirectory: string;
-  allowModelProcessing: boolean;
+  allowModelProcessing?: boolean;
+  allowHistoricalReport?: boolean;
   competitionIds?: string[];
   now?: () => Date;
 }
@@ -613,8 +614,8 @@ export class WyscoutPlayerRepository implements PlayerRepository {
   private cached?: Promise<PlayerProfile[]>;
 
   constructor(options: WyscoutRepositoryOptions) {
-    if (!options.allowModelProcessing) {
-      throw new WyscoutProviderError("invalid_configuration", "Wyscout mode is disabled until local or otherwise permitted model processing is explicitly enabled.");
+    if (!options.allowModelProcessing && !options.allowHistoricalReport) {
+      throw new WyscoutProviderError("invalid_configuration", "Wyscout mode is disabled until model processing or historical report use is explicitly enabled.");
     }
     this.dataDirectory = path.resolve(options.dataDirectory);
     this.competitionIds = new Set((options.competitionIds ?? []).map((value) => value.trim()).filter(Boolean));

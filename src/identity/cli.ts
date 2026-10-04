@@ -48,7 +48,8 @@ async function main(): Promise<void> {
         ? registry.resolveExact(first, second, third!)
         : registry.resolveSourceProvider(first, second);
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      if (result.status === "not_found" || result.status === "unsupported_provider" || result.status === "ambiguous") {
+      if (result.status === "not_found" || result.status === "unsupported_provider" || result.status === "ambiguous"
+        || result.status === "de_corroborated" || result.status === "withheld" || result.status === "target_not_published") {
         process.exitCode = 2;
       }
     } finally {

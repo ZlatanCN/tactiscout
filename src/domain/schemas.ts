@@ -322,6 +322,57 @@ export const ExternalSignalCoverageSchema = z.object({
 });
 export type ExternalSignalCoverage = z.infer<typeof ExternalSignalCoverageSchema>;
 
+export const HistoricalArchiveMetricSchema = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1),
+  value: z.number().finite(),
+  unit: z.string(),
+  definition: z.string().min(1),
+  sourceField: z.string().min(1),
+});
+
+export const HistoricalArchiveSampleSchema = z.object({
+  provider: z.literal("Wyscout Open Data"),
+  providerPlayerId: z.string().min(1),
+  playerName: z.string().min(1),
+  team: z.string().min(1),
+  competition: z.string().min(1),
+  season: z.string().min(1),
+  minutes: z.number().nonnegative(),
+  metrics: z.array(HistoricalArchiveMetricSchema),
+  license: z.literal("CC BY 4.0"),
+  licenseUrl: z.literal("https://creativecommons.org/licenses/by/4.0/"),
+  attribution: z.string().min(1),
+  sourceUrl: z.string().url(),
+  identityLink: z.object({
+    reepReleaseStamp: z.string().min(1),
+    reepId: z.string().min(1),
+    sourceProvider: z.string().min(1),
+    sourcePlayerId: z.string().min(1),
+    sourceRung: z.string().nullable(),
+    archiveRung: z.string().nullable(),
+    sourceUpstreamStatus: z.string().nullable(),
+    archiveUpstreamStatus: z.string().nullable(),
+  }),
+});
+export type HistoricalArchiveSample = z.infer<typeof HistoricalArchiveSampleSchema>;
+
+export const HistoricalArchiveCoverageSchema = z.object({
+  status: z.enum(["disabled", "not_run", "complete", "partial", "failed"]),
+  disabledReason: z.enum([
+    "report_display_not_allowed",
+    "local_retention_not_allowed",
+    "reep_index_missing",
+    "wyscout_archive_missing",
+    "primary_source_is_archive",
+  ]).nullable(),
+  checkedCandidates: z.number().int().nonnegative(),
+  mappedCandidates: z.number().int().nonnegative(),
+  matchedCandidates: z.number().int().nonnegative(),
+  failedCandidates: z.number().int().nonnegative(),
+});
+export type HistoricalArchiveCoverage = z.infer<typeof HistoricalArchiveCoverageSchema>;
+
 export const PlayerRecommendationSchema = z.object({
   player: PlayerProfileSchema,
   rationale: z.string(),
@@ -330,6 +381,7 @@ export const PlayerRecommendationSchema = z.object({
   focusEvidenceKeys: z.array(CapabilityMetricKeySchema),
   evidence: z.array(CapabilityEvidenceSchema),
   externalSignals: z.array(PlayerEloSignalSchema).default([]),
+  historicalArchiveSamples: z.array(HistoricalArchiveSampleSchema).default([]),
   reportObservations: z.array(z.object({
     summary: z.string(),
     verificationStatus: z.enum(["unverified", "linked_to_match_data"]),
@@ -389,6 +441,14 @@ export const RecruitmentReportSchema = z.object({
     matchedCandidates: 0,
     failedCandidates: 0,
   }),
+  historicalArchiveCoverage: HistoricalArchiveCoverageSchema.default({
+    status: "not_run",
+    disabledReason: null,
+    checkedCandidates: 0,
+    mappedCandidates: 0,
+    matchedCandidates: 0,
+    failedCandidates: 0,
+  }),
   knowledgeCoverage: KnowledgeCoverageSchema.default({
     methodologyChunksRetrieved: 0,
     methodologySearchFailed: false,
@@ -422,6 +482,7 @@ export const RecruitmentProgressStageSchema = z.enum([
   "candidate_search",
   "player_evaluation",
   "external_signal",
+  "historical_archive",
   "report_search",
   "synthesizing",
   "review",
