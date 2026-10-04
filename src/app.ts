@@ -172,14 +172,34 @@ export function createApp(options: {
       return reply.code(400).send({ error: "请提供有效的案件编号和 1–4000 字的消息。" });
     }
 
+    const progressEvents: RecruitmentProgress["events"] = [];
+    const stageOccurrences = new Map<RecruitmentProgress["stage"], number>();
+    let progressSequence = 0;
+    const updateProgress = (
+      update: Pick<RecruitmentProgress, "stage" | "message" | "completedSteps">,
+      active = true,
+    ) => {
+      const updatedAt = new Date().toISOString();
+      progressSequence += 1;
+      const occurrence = (stageOccurrences.get(update.stage) ?? 0) + 1;
+      stageOccurrences.set(update.stage, occurrence);
+      progressEvents.push({
+        sequence: progressSequence,
+        occurrence,
+        stage: update.stage,
+        message: update.message,
+        occurredAt: updatedAt,
+      });
+      if (progressEvents.length > 12) progressEvents.shift();
+      recruitmentProgressByCase.set(caseId, RecruitmentProgressSchema.parse({
+        ...update,
+        active,
+        updatedAt,
+        events: progressEvents,
+      }));
+    };
+
     try {
-      const updateProgress = (update: Pick<RecruitmentProgress, "stage" | "message" | "completedSteps">) => {
-        recruitmentProgressByCase.set(caseId, RecruitmentProgressSchema.parse({
-          ...update,
-          active: true,
-          updatedAt: new Date().toISOString(),
-        }));
-      };
       for (const [knownCaseId, progress] of recruitmentProgressByCase) {
         if (Date.now() - Date.parse(progress.updatedAt) > 30 * 60 * 1000) recruitmentProgressByCase.delete(knownCaseId);
       }
@@ -207,15 +227,11 @@ export function createApp(options: {
       return ConversationTurnResponseSchema.parse(response);
     } catch (error) {
       const progress = recruitmentProgressByCase.get(caseId);
-      if (progress) {
-        recruitmentProgressByCase.set(caseId, RecruitmentProgressSchema.parse({
-          ...progress,
-          active: false,
-          stage: "failed",
-          message: "本轮调查遇到问题，详情见下方错误信息",
-          updatedAt: new Date().toISOString(),
-        }));
-      }
+      if (progress) updateProgress({
+        stage: "failed",
+        message: "本轮调查遇到问题，详情见下方错误信息",
+        completedSteps: progress.completedSteps,
+      }, false);
       const message = error instanceof Error ? error.message : "招募对话暂时无法继续。";
       if (error instanceof RecruitmentModelUnavailableError) return reply.code(503).send({ error: message });
       if (error instanceof RecruitmentCaseStateExpiredError) return reply.code(409).send({ error: message });

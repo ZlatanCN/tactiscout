@@ -113,6 +113,8 @@ Wyscout 事件指标映射为：射门事件的标签 101 计进球、标签 301
 
 `POST /api/v1/recruitment/cases/:caseId/turns` 接受 `{ "message": "..." }`，返回 `needs_input` 或 `completed`。追问回答使用同一个 `caseId`，以恢复同一 LangGraph 案件。
 
+`GET /api/v1/recruitment/cases/:caseId/progress` 返回该案件本轮最近最多 12 条实际 LangGraph 阶段事件。等待面板按时间顺序展示当前环节、已经过的环节和耗时；轮询不可用时仍显示启动状态和计时。阶段来自服务端受控文案，不暴露 prompt 或模型推理；界面不编造完成百分比或 ETA，阶段数量也不代表推荐质量。
+
 工作台和生成的报告会标出数据范围：虚构演示、历史比赛/聚合样本，或 Sportmonks 账号许可范围内的当前赛季球员池。报告还会列出本次已加载的球员记录数及实际出现的赛事/赛季；拿不到完整清单时会明确标为未知。历史数据不会被描述成现役阵容；Sportmonks 候选范围仅限服务器配置且账户已开通的赛事与赛季，真实账号覆盖尚未验证时仍需人工核对。
 
 `GET /api/v1/dataset` 返回当前数据模式；`GET /api/v1/knowledge/status` 返回本地索引与许可登记的统计；`/api/v1/player-observations` 提供第一方观察记录的本地 CRUD；`GET /health` 返回服务状态。旧版一次性 `/api/v1/scout` 和 `/api/v1/requirements/parse` 暂时保留，以兼容已有调用。

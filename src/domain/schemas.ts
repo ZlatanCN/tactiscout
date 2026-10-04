@@ -385,6 +385,7 @@ export const RecruitmentProgressStageSchema = z.enum([
   "candidate_search",
   "player_evaluation",
   "report_search",
+  "synthesizing",
   "review",
   "asking_user",
   "completed",
@@ -392,11 +393,21 @@ export const RecruitmentProgressStageSchema = z.enum([
 ]);
 export type RecruitmentProgressStage = z.infer<typeof RecruitmentProgressStageSchema>;
 
+export const RecruitmentProgressEventSchema = z.object({
+  sequence: z.number().int().positive(),
+  occurrence: z.number().int().positive(),
+  stage: RecruitmentProgressStageSchema,
+  message: z.string().min(1),
+  occurredAt: z.string().datetime(),
+});
+export type RecruitmentProgressEvent = z.infer<typeof RecruitmentProgressEventSchema>;
+
 export const RecruitmentProgressSchema = z.object({
   active: z.boolean(),
   stage: RecruitmentProgressStageSchema,
   message: z.string().min(1),
   completedSteps: z.number().int().nonnegative(),
   updatedAt: z.string().datetime(),
+  events: z.array(RecruitmentProgressEventSchema).max(12).default([]),
 });
 export type RecruitmentProgress = z.infer<typeof RecruitmentProgressSchema>;

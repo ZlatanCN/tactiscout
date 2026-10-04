@@ -272,12 +272,32 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .typing-indicator > span { width: 5px; height: 5px; border-radius: 50%; background: #8eaa95; animation: typing-pulse 1s ease-in-out infinite; }
 .typing-indicator > span:nth-child(2) { animation-delay: .15s; }.typing-indicator > span:nth-child(3) { animation-delay: .3s; }
 .typing-indicator small { margin-left: 5px; color: #868d84; font-size: 9px; }
-.recruitment-progress { display: grid; gap: 10px; min-width: min(310px, 70vw); }
+.recruitment-progress { display: grid; gap: 12px; width: min(440px, 78vw); padding: 15px 16px; }
 .recruitment-progress-heading { display: flex; align-items: center; gap: 9px; color: #526d59; font-size: 10px; line-height: 1.5; }
-.recruitment-progress-spinner { width: 13px; height: 13px; flex: 0 0 13px; border: 1.5px solid #d6e3d8; border-top-color: #598467; border-radius: 50%; animation: recruitment-spin .9s linear infinite; }
-.recruitment-progress-meta { display: flex; justify-content: space-between; gap: 10px; color: #969b92; font-family: var(--mono); font-size: 8px; }
-.recruitment-progress > small { padding-top: 7px; border-top: 1px solid #eeede7; color: #858c82; font-size: 9px; line-height: 1.5; }
-@keyframes recruitment-spin { to { transform: rotate(360deg); } }
+.recruitment-progress-heading strong { font-weight: 650; }
+.recruitment-progress-live-dot { position: relative; width: 9px; height: 9px; flex: 0 0 9px; border-radius: 50%; background: #659477; }
+.recruitment-progress-live-dot::after { position: absolute; inset: -3px; border: 1px solid rgba(101,148,119,.28); border-radius: 50%; content: ""; animation: recruitment-pulse 1.8s ease-out infinite; }
+.recruitment-progress-timeline { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.recruitment-progress-timeline li { position: relative; display: grid; grid-template-columns: 17px minmax(0, 1fr); gap: 8px; min-height: 33px; }
+.recruitment-progress-timeline li:not(:last-child)::before { position: absolute; top: 15px; bottom: -2px; left: 6px; width: 1px; background: #e1e8df; content: ""; }
+.recruitment-progress-marker { z-index: 1; display: grid; width: 13px; height: 13px; place-items: center; margin-top: 1px; border: 1px solid #cbd9cd; border-radius: 50%; color: #64866d; background: #fffefa; font-size: 8px; }
+.recruitment-progress-timeline .is-current .recruitment-progress-marker { border: 3px solid #dce9dd; background: #5f8a6d; }
+.recruitment-progress-event { display: grid; align-content: start; gap: 2px; padding-bottom: 9px; }
+.recruitment-progress-event-meta { display: flex; align-items: center; gap: 6px; color: #a0a59c; font-family: var(--mono); font-size: 7px; line-height: 1.2; }
+.recruitment-progress-event-meta small { padding: 2px 4px; border-radius: 3px; color: #7d856f; background: #f2f1e9; font: inherit; }
+.recruitment-progress-event-label { color: #727b71; font-size: 9px; line-height: 1.45; overflow-wrap: anywhere; }
+.recruitment-progress-timeline .is-current .recruitment-progress-event-meta { color: #588064; }
+.recruitment-progress-timeline .is-current .recruitment-progress-event-label { color: #435e49; font-weight: 600; }
+.recruitment-progress-meta { display: flex; justify-content: space-between; gap: 10px; padding-top: 8px; border-top: 1px solid #eeede7; color: #969b92; font-family: var(--mono); font-size: 7px; }
+.recruitment-progress > small { color: #858c82; font-size: 8px; line-height: 1.5; }
+@keyframes recruitment-pulse { to { transform: scale(1.6); opacity: 0; } }
+@media (max-width: 520px) {
+  .recruitment-progress { width: min(100%, 78vw); padding: 12px; }
+  .recruitment-progress-meta { flex-wrap: wrap; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .recruitment-progress-live-dot::after { animation: none; }
+}
 @keyframes typing-pulse { 0%, 60%, 100% { opacity: .35; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
 .turn-hint { margin: -4px 0 0 36px; color: #858c82; font-size: 9px; }
 .composer { padding: 15px 18px 12px; border-top: 1px solid #e8e6df; background: #fffefa; }

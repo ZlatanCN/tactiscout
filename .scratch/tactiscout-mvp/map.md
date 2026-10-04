@@ -36,13 +36,14 @@ Labels: wayfinder:map
 - 已完成 [issue 21](issues/21-open-player-report-corpus.md)：没有找到明确允许自动获取、持久化、AI/RAG 处理与用户展示的真实具名球员报告语料；优先发展自有授权观察记录。明确标注虚构的 MIT 数据集只适合作为测试夹具，不冒充真实球员。
 - 已完成 [issue 22](issues/22-revoke-and-purge-knowledge-source.md)：每次检索重读许可，来源撤权对同一实例立即生效，并能从当前 LanceDB 表版本删除该来源行。旧历史版本的磁盘字节须另行停机维护清理，CLI 不会在线强制回收。
 - 已完成 [issue 23](issues/23-first-party-player-observations.md)：工作台可创建、查看、编辑和删除本机球探观察；逐条控制持久化与 AI/RAG 授权；检索结果保留作者、球员身份、日期和出处。撤权会移除当前 LanceDB 表版本中的文档；历史版本的磁盘字节不保证物理擦除。
-- [调查阶段反馈与有依据的追问](issues/16-progress-and-grounded-clarifications.md)已完成：长时间运行时显示 LangGraph 当前阶段、决策步数和耗时；参考球员无本地记录时，不再要求用户确认身份或未提出的联赛/赛季范围，并禁止依据模型记忆断言现役俱乐部/联赛。
+- [调查阶段反馈与有依据的追问](issues/16-progress-and-grounded-clarifications.md)已完成：长时间运行时显示 LangGraph 当前阶段与耗时；参考球员无本地记录时，不再要求用户确认身份或未提出的联赛/赛季范围，并禁止依据模型记忆断言现役俱乐部/联赛。阶段时间线由[把球探调查进度做成可读的阶段时间线](issues/30-readable-investigation-progress.md)继续细化。
 - [LangGraph Agent 与 Harness 调研](research/langgraph-agent-harness-patterns.md)现包含 Deep Agents、Open Deep Research、Exa、Lyft、Kensho、AppFolio、Open SWE 及两个足球项目的公开做法；共同模式是外层显式编排、窄职责分支、结构化交接和轨迹评估，不追求 Agent 数量。
 - [招募案件 checkpoint 跨重启恢复](issues/13-durable-case-checkpoints.md)完成：LangGraph 内部案件状态默认存本机 `.data/recruitment-cases.sqlite`，可用 `TACTISCOUT_CHECKPOINT_PATH` 改路径；追问暂停后 API 重启可由同一案件编号恢复。计划与可见历史仍在浏览器 `localStorage`。
 - [LangGraph harness 行为评估套件](issues/14-agent-harness-evaluation-suite.md)现支持具名场景、重复运行、轨迹隐私净化、候选 ID 顺序校验和 Ollama 全场景检查。2026-10-04 真实 Qwen 回归发现并修复了“确认位置无候选后模型重复翻页/追问”：现在先征求是否放宽，拒绝后如实结束；同次两场景复跑均通过。单次场景通过不是推荐准确率证明。
 - 使用 `.scratch/<feature>/` 保存地图、规格和单独的问题文件；本地 triage 标签沿用项目默认值。
 
 ## Decisions-so-far
+- [把球探调查进度做成可读的阶段时间线](issues/30-readable-investigation-progress.md)：每轮显示实际 LangGraph 阶段事件、重复阶段次数与耗时，不把流程阶段伪装成完成比例或推荐质量。
 
 - [防止候选分页耗尽 Agent 调查预算](issues/26-wyscout-agent-cursor-regression.md)：按搜索范围维护候选游标和评估去重；最终结论采用短提示与证据压缩历史，单次模型请求有界。真实 Wyscout/Qwen 单次验证通过，未验证候选排序准确率。
 

@@ -12,7 +12,7 @@ import {
   type ConversationMessage,
   type SavedRecruitmentPlan,
 } from "./plans";
-import type { DatasetStatus, RecruitmentProgress, RecruitmentReport } from "../../src/domain/schemas.js";
+import type { DatasetStatus, RecruitmentProgress, RecruitmentProgressStage, RecruitmentReport } from "../../src/domain/schemas.js";
 import { describeDatasetScope } from "../../src/domain/dataset-scope.js";
 import { firstPartyObservationSourceId } from "../../src/knowledge/source-ids.js";
 
@@ -21,6 +21,25 @@ const suggestedBriefs = [
   "我想为巴萨找一个新的后卫，要能参与出球和高位防守",
   "给阿森纳找一个能推进、也愿意参与压迫的中场",
 ];
+
+const completedProgressLabels: Partial<Record<RecruitmentProgressStage, string>> = {
+  starting: "已启动本轮调查",
+  planning: "已规划下一步调查",
+  methodology: "已查找角色评估方法",
+  team_sample: "已检查目标球队样本",
+  candidate_search: "已搜索候选球员",
+  player_evaluation: "已评估候选球员表现",
+  report_search: "已查找球员报告资料",
+  synthesizing: "已汇总候选证据",
+  review: "已核对推荐证据",
+  asking_user: "已准备好需要确认的问题",
+  completed: "已生成调查报告",
+  failed: "调查遇到问题",
+};
+
+function elapsedLabel(seconds: number): string {
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
 
 function App() {
   const [threadId, setThreadId] = useState<string>(() => crypto.randomUUID());
@@ -38,6 +57,7 @@ function App() {
   const [hasConversationState, setHasConversationState] = useState(false);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState<RecruitmentProgress | null>(null);
+  const [progressConnection, setProgressConnection] = useState<"idle" | "connecting" | "live" | "stale">("idle");
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -66,9 +86,12 @@ function App() {
     const pollProgress = async () => {
       try {
         const current = await getRecruitmentProgress(threadId);
-        if (!cancelled) setProgress(current);
+        if (!cancelled) {
+          setProgress(current);
+          setProgressConnection("live");
+        }
       } catch {
-        // Keep showing elapsed time if a progress poll fails; the turn request remains authoritative.
+        if (!cancelled) setProgressConnection((previous) => previous === "live" || previous === "stale" ? "stale" : "connecting");
       }
       if (!cancelled) pollTimer = window.setTimeout(() => void pollProgress(), 1200);
     };
@@ -130,12 +153,14 @@ function App() {
     setLoading(true);
     setStartedAt(requestStartedAt);
     setElapsedSeconds(0);
+    setProgressConnection("connecting");
     setProgress({
       active: true,
       stage: "starting",
       message: "正在启动本轮球探调查",
       completedSteps: 0,
       updatedAt: new Date(requestStartedAt).toISOString(),
+      events: [],
     });
     setError(null);
     setNotice(null);
@@ -223,6 +248,8 @@ function App() {
     setActivePlanId(plan.id);
     setHasConversationState(plan.hasConversationState);
     setError(null);
+    setProgress(null);
+    setProgressConnection("idle");
     setNotice(plan.lastReportedAt
       ? `已打开计划，显示 ${formatDate(plan.lastReportedAt)} 保存的最近报告。`
       : "已打开保存的招募对话。Agent 会接着处理你的补充。 ");
@@ -242,6 +269,8 @@ function App() {
     setHasConversationState(false);
     setError(null);
     setNotice("已开始新的招募案件。");
+    setProgress(null);
+    setProgressConnection("idle");
   }
 
   function deletePlan(id: string) {
@@ -311,7 +340,31 @@ function App() {
                   </div>
                 </article>
               ))}
-              {loading && <div className="chat-message chat-message-assistant"><span className="assistant-avatar">TS</span><div className="chat-bubble recruitment-progress" role="status" aria-live="polite"><div className="recruitment-progress-heading"><span className="recruitment-progress-spinner" aria-hidden="true" /><strong>{progress?.message ?? "正在启动本轮球探调查"}</strong></div><div className="recruitment-progress-meta"><span>已等待 {Math.floor(elapsedSeconds / 60)}:{String(elapsedSeconds % 60).padStart(2, "0")}</span>{progress && <span>已完成 {progress.completedSteps} 个 Agent 决策步骤</span>}</div>{elapsedSeconds >= 20 && <small>本地模型分析需要一些时间；结果返回前无需重复发送。</small>}</div></div>}
+              {loading && <div className="chat-message chat-message-assistant">
+                <span className="assistant-avatar">TS</span>
+                <div className="chat-bubble recruitment-progress">
+                  <div className="recruitment-progress-heading" role="status" aria-live="polite">
+                    <span className="recruitment-progress-live-dot" aria-hidden="true" />
+                    <strong>{progress?.message ?? "正在启动本轮球探调查"}</strong>
+                  </div>
+                  <ol className="recruitment-progress-timeline" aria-label="本轮调查已发生的阶段">
+                    {(progress?.events ?? []).slice(-6).map((event, index, visibleEvents) => {
+                      const current = index === visibleEvents.length - 1;
+                      const repeatLabel = event.occurrence > 1 ? `第 ${event.occurrence} 次` : null;
+                      return <li className={current ? "is-current" : "is-complete"} key={event.sequence} aria-current={current ? "step" : undefined}>
+                        <span className="recruitment-progress-marker" aria-hidden="true">{current ? "" : "✓"}</span>
+                        <span className="recruitment-progress-event">
+                          <span className="recruitment-progress-event-meta">{current ? "当前环节" : "已完成"}{repeatLabel && <small>{repeatLabel}</small>}</span>
+                          <span className="recruitment-progress-event-label">{current ? event.message : completedProgressLabels[event.stage] ?? event.message}</span>
+                        </span>
+                      </li>;
+                    })}
+                  </ol>
+                  <div className="recruitment-progress-meta"><span>已等待 {elapsedLabel(elapsedSeconds)}</span><span>阶段轨迹，不代表完成比例</span></div>
+                  {progressConnection !== "live" && <small>{progressConnection === "stale" ? "阶段更新暂时不可用；本轮仍在继续，计时会保留。" : "正在连接实时阶段；等待时间会持续更新。"}</small>}
+                  {progressConnection === "live" && elapsedSeconds >= 20 && <small>本地模型仍在处理；调查阶段会随流程继续更新。</small>}
+                </div>
+              </div>}
               {waitingForAnswer && !loading && <p className="turn-hint">补充信息后，Agent 会在同一案件中继续调查。</p>}
             </div>
 

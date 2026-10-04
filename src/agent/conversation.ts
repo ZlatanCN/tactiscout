@@ -934,8 +934,8 @@ export function createRecruitmentConversation(input: {
         : "investigate" as const;
       if (decisionMode === "conclude") {
         emitProgress(config, {
-          stage: "review",
-          message: "正在汇总已核验的候选证据并生成结论",
+          stage: "synthesizing",
+          message: "正在汇总候选证据并整理结论",
           completedSteps: state.decisionSteps,
         });
       }
