@@ -646,6 +646,9 @@ function externalSignalCoverageText(coverage: RecruitmentReport["externalSignalC
 
 function playerEloIdentityText(signal: PlayerEloSignal): string {
   const crosswalk = signal.identityCrosswalk;
+  if (signal.identityMatch === "reep_crosswalk" && !crosswalk) {
+    return "身份映射出处不完整，无法说明该 PlayerElo 数据对应的来源球员。";
+  }
   if (signal.identityMatch === "reep_crosswalk" && crosswalk) {
     const rungDetails = [
       crosswalk.sourceRungs.length ? `来源 rung：${crosswalk.sourceRungs.join("、")}` : null,

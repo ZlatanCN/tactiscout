@@ -47,7 +47,8 @@ Labels: ready-for-agent
 - 2026-10-04：对话图已改用 `searchCandidates`、`inspectTeam`、`getPlayersByIds` 和 `getComparisonPlayers` 四个按需入口；`loadPlayers` 可选，只有离线兼容适配器才以它作为默认实现。候选页校验来源实际执行的筛选、精确/未知总数、ID 唯一性和连续游标；来源失败不填成零匹配。调查范围累计真实读取记录的身份、赛事和赛季摘要，不把完整球员档案复制到 checkpoint。TypeScript build 通过；没有运行测试。PlayerElo 尚未接入，真实授权、key 和 smoke 仍未完成。
 - 2026-10-04：PlayerElo 已接入为可选 LangGraph 报告节点：仅在证据审查通过后，对最终推荐候选按姓名查询；只有分页结果未满 100 条且规范化姓名唯一时才附加 Elo/EAR 标签。外部信号在结构、报告卡片和覆盖状态中独立呈现，不进入 Agent prompt、能力证据、排序或评分；默认因缺 API key/展示许可/本地保留许可而关闭。客户端不做缓存，但启用后应用会将报告状态保存在本机 LangGraph checkpoint 与浏览器 localStorage，因此有单独保留许可门控。前后端 build 通过；没有运行测试，也未配置 key 或调用真实 API，展示权、保留权和 smoke 仍待确认。
 - 2026-10-04：重新查看 [PlayerElo 官方 API access](https://playerelo.football/api-access) 与[接口文档](https://playerelo.football/docs)：官网当前仍列免费档 €0、500 次/月、每分钟 10 次、evaluation/hobby 用途，且所有 endpoint 需要 Bearer key；页面的 key/subscription 入口当前显示 “Temporarily unavailable”。因此它暂时不能作为无需用户凭据的 live 验证路径，也不适合替代 FBref 成为主候选源；保留现有可选 report-only adapter，等 free-key 入口恢复后再联调。
+- 2026-10-04：修订此前姓名查询阶段记录：PlayerElo enrichment 已改为精确 `getPlayer(id)`；API-Football 来源直接用来源 ID，其他来源只有经 Reep 唯一跨来源映射后才查询，并校验响应 ID。当前没有可用 key 和展示/本机留存授权，因此 live API smoke 仍未完成。参见 [跨来源身份映射 issue 43](43-playerelo-reep-identity-mapping.md)。
 
 ## Answer
 
-进行中。查询契约已进入对话 Agent，离线适配可继续使用现有数据。PlayerElo 现有一个默认关闭的 report-only enrichment 路径，仍缺可用 key、展示权与本地保留权确认，尚未执行真实 API smoke；它是推荐后的独立信号，不是候选发现数据源。
+进行中。查询契约已进入对话 Agent，离线适配可继续使用现有数据。PlayerElo 有一个默认关闭的 report-only enrichment 路径：精确来源 ID 直连或经 Reep 唯一映射后按 ID 查询，不按姓名建立身份。仍缺可用 key、展示权与本地保留权确认，尚未执行真实 API smoke；它是推荐后的独立信号，不是候选发现数据源。

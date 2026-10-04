@@ -4,11 +4,11 @@
 
 ## 结论
 
-Reep 可以作为当前来源 ID 与 Wyscout archive ID 之间的**精确身份桥接层**，但 coverage 不是球员或 provider 的完整性承诺。适合把 Wyscout 的 2017/18 记录作为有出处的历史背景并列到候选报告；不能由 bridge 推出候选当前效力、现役能力、市场可行性或 Wyscout 未覆盖联赛中的表现。
+Reep 可以作为当前来源 ID 与 Wyscout archive ID 之间的**跨来源身份映射层**，但 coverage 不是球员或 provider 的完整性承诺。适合把 Wyscout 的 2017/18 记录作为有出处的历史背景并列到候选报告；不能由 mapping 推出候选当前效力、现役能力、市场可行性或 Wyscout 未覆盖联赛中的表现。
 
-Reep 当前离线 release 的 stamp 为 `20261003T052950Z`；部分官方说明页仍显示 `20260926T145536Z`。本机按 stamp 固定下载 `bridges.csv.gz` 与 `redirects.csv.gz`，与官方 checksum 文件逐一核验后导入 SQLite：索引收录 636,480 条项目支持的 bridge rows 和 2,007 条 redirects。数据文件位于 Git 忽略的 `.data/`，没有加入仓库。程序和报告应记录实际导入索引中的 `release_stamp`，不能把发布日期写死或从旧教程推断。[latest release metadata](https://data.reep.football/releases/latest.json) · [official checksums](https://data.reep.football/releases/20261003T052950Z/checksums.txt) · [Reep downloads and updates](https://www.reep.football/get-started/)
+Reep 当前离线 release 的 stamp 为 `20261003T052950Z`；部分官方说明页仍显示 `20260926T145536Z`。本机按 stamp 固定下载 `bridges.csv.gz` 与 `redirects.csv.gz`，与官方 checksum 文件逐一核验后导入 SQLite。扩展 importer 支持 API-Football namespace 后，当前项目索引收录 791,122 条 bridge rows，其中 API-Football 为 154,642 条；数据文件位于 Git 忽略的 `.data/`，没有加入仓库。程序和报告应记录实际导入索引中的 `release_stamp`，不能把发布日期写死或从旧教程推断。[latest release metadata](https://data.reep.football/releases/latest.json) · [official checksums](https://data.reep.football/releases/20261003T052950Z/checksums.txt) · [Reep downloads and updates](https://www.reep.football/get-started/)
 
-## 身份桥接能证明什么
+## 跨来源身份映射能证明什么
 
 - 官方 bridge 以 provider、namespace 和 provider external ID 定位来源记录；redirect release 需要跟随 `merged`，并保留无法规范化的撤销/隐藏状态。Reep ID 与 provider ID 只解决身份关联，不提供球员统计或当前 roster。[Reep data](https://reep.football/data/) · [Getting started](https://reep.football/get-started/) · [release schema](https://data.reep.football/releases/latest/schema.json)
 - 官方 coverage 是按 provider 和赛事逐项构建的，没有承诺所有比赛、球员或 source rows 都可互相映射。`sportmonks` 在 coverage 中是 bridge-only：可帮助把 Sportmonks external ID 接到另一个身份锚点，但不能把 bridge 自身当作 Sportmonks 独立表现证据。[Coverage](https://www.reep.football/coverage/)
@@ -30,8 +30,7 @@ Wyscout Open Data 对应明确赛季与比赛的历史事件档案，论文与�
 ## 项目落地与未验证项
 
 - 已新增可选 Wyscout archive sidecar：Sportmonks、StatsBomb Open Data、SkillCorner 候选经本地 Reep resolver 精确查到 Wyscout ID 后，再从本机 Wyscout 文件抽取每条球员历史样本。它不做自动下载，不调用 Reep API，也不会把 sidecar 送入模型。
-- 本地当前有 Wyscout Open Data 文件，但没有 Reep identity SQLite index。故目前可确认静态 build 与代码路径设计，**不能报告真实 release 命中人数、按联赛的桥接率或真实用户 report 样例**。
-- 本机已导入 Reep `20261003T052950Z` identity index，并通过上述单 ID smoke；源记录 ID 来自该 release，历史档案取自本地 Wyscout Open Data。它验证了身份桥接与历史样本提取的代码路径，不验证在线 Sportmonks 查询、真实候选池覆盖率或报告 UI 的人工验收。
+- 本机已导入 Reep `20261003T052950Z` identity index，并通过上述单 ID smoke；源记录 ID 来自该 release，历史档案取自本地 Wyscout Open Data。针对本机 Wyscout 快照的固定样本映射覆盖在 [PlayerElo/Reep 映射研究](playerelo-reep-exact-identity-crosswalk-2026-10.md) 中单独报告；单 ID smoke 仍不验证在线 Sportmonks 查询、真实候选池覆盖率或报告 UI 的人工验收。
 - Reep 网站不同页面存在 stamp 滞后；当前数据落在 Git 忽略的 `.data/`。以后换版时需按 pinned release 校验 checksum、导入并对固定来源 ID 重新计算覆盖摘要。
 
 ## 一手来源

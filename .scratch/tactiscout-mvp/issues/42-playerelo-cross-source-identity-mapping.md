@@ -1,4 +1,4 @@
-# 验证 PlayerElo 的精确身份桥接
+# 验证 PlayerElo 的跨来源身份映射
 
 Type: research
 Status: resolved

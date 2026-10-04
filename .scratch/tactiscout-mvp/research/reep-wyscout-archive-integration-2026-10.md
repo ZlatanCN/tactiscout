@@ -16,7 +16,7 @@ Reep 适合作为**精确身份连接层**：以来源、namespace、外部 ID �
 - 因而，当前无法从总体行数推算“Sportmonks 候选有多少能拿到 Wyscout 2017/18 表现”。必须对真实 release 和本地数据分别计算：候选输入数 → Reep 精确解析数 → 同 Reep ID 上有 Wyscout bridge 数 → 本地 Wyscout player ID 匹配数 → 实际有比赛事件样本数。每步都报告分母、分子和缺失原因。本次 smoke 只验证一条 ID 路径，不是针对真实候选池计算的覆盖率。
 - Reep 的 bridge key 是 `(provider, namespace, external_id)`；Wyscout player 与 Sportmonks player 的 namespace 均为 `player`，external ID 按文本处理。错误 namespace 会静默无匹配。一个 Reep 身份可能带多个同 provider ID，公开指南要求保留多值而不是任意取一个；应用应将多值状态作为歧义呈现并显式处理。[Reep 映射指南](https://www.reep.football/get-started/)
 - Reep 自称是身份注册表，不包含事件 feed、球探评分、xG、tracking 或战术指标。即使 Reep 命中，仍需单独查明本地 Wyscout 文件是否有完全相同的 Wyscout player ID、目标赛季/赛事记录和足够事件样本。[Reep 首页](https://www.reep.football/)；[Reep 覆盖页](https://www.reep.football/coverage/)
-- 本机已按官方 checksum 导入 `20261003T052950Z` 的 `bridges.csv.gz` 与 `redirects.csv.gz`，索引共纳入 636,480 条项目支持的 bridge rows 和 2,007 条 redirects。实际 smoke 命中 Sportmonks `1002` → Reep `rp606b79a0db2365` → Wyscout `9080`，并在本地 Wyscout 2017/18 意甲 Genoa 记录中取到 1,617 分钟、9 项可用指标。候选外壳为合成数据，桥接 ID 与档案 ID/统计来自真实本地文件。
+- 本机已按官方 checksum 导入 `20261003T052950Z` 的 `bridges.csv.gz` 与 `redirects.csv.gz`。扩展 importer 支持 API-Football namespace 后，索引共纳入 791,122 条项目支持的 bridge rows，其中 API-Football 为 154,642 条。实际 smoke 命中 Sportmonks `1002` → Reep `rp606b79a0db2365` → Wyscout `9080`，并在本地 Wyscout 2017/18 意甲 Genoa 记录中取到 1,617 分钟、9 项可用指标。候选外壳为合成数据，桥接 ID 与档案 ID/统计来自真实本地文件。
 
 ## 2. Snapshot、重定向和 rung 的产品呈现
 

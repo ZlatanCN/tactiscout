@@ -345,7 +345,10 @@ export const PlayerEloSignalSchema = z.object({
     apiFootballRungs: z.array(z.string()),
   }).nullable().optional(),
   retrievedAt: z.string().datetime(),
-});
+}).refine(
+  (signal) => signal.identityMatch !== "reep_crosswalk" || signal.identityCrosswalk != null,
+  { path: ["identityCrosswalk"], message: "Reep crosswalk signals require crosswalk provenance." },
+);
 export type PlayerEloSignal = z.infer<typeof PlayerEloSignalSchema>;
 
 export const ExternalSignalCoverageSchema = z.object({
@@ -359,6 +362,22 @@ export const ExternalSignalCoverageSchema = z.object({
   failedCandidates: z.number().int().nonnegative(),
 });
 export type ExternalSignalCoverage = z.infer<typeof ExternalSignalCoverageSchema>;
+
+export function createEmptyExternalSignalCoverage(
+  status: ExternalSignalCoverage["status"] = "not_run",
+  disabledReason: ExternalSignalCoverage["disabledReason"] = null,
+): ExternalSignalCoverage {
+  return {
+    status,
+    disabledReason,
+    identityUnavailableCandidates: 0,
+    directIdentityCandidates: 0,
+    crosswalkIdentityCandidates: 0,
+    checkedCandidates: 0,
+    matchedCandidates: 0,
+    failedCandidates: 0,
+  };
+}
 
 export const HistoricalArchiveMetricSchema = z.object({
   key: z.string().min(1),
@@ -472,16 +491,7 @@ export const RecruitmentReportSchema = z.object({
   needSummary: z.string(),
   capabilityProfile: z.array(z.string()),
   evidenceCoverage: EvidenceCoverageSummarySchema,
-  externalSignalCoverage: ExternalSignalCoverageSchema.default({
-    status: "not_run",
-    disabledReason: null,
-    identityUnavailableCandidates: 0,
-    directIdentityCandidates: 0,
-    crosswalkIdentityCandidates: 0,
-    checkedCandidates: 0,
-    matchedCandidates: 0,
-    failedCandidates: 0,
-  }),
+  externalSignalCoverage: ExternalSignalCoverageSchema.default(() => createEmptyExternalSignalCoverage()),
   historicalArchiveCoverage: HistoricalArchiveCoverageSchema.default({
     status: "not_run",
     disabledReason: null,

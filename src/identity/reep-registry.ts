@@ -63,6 +63,16 @@ export interface ReepPlayerEloResolution {
   source: { provider: string; namespace: string; externalId: string };
   reepId?: string;
   apiFootballPlayerId?: string;
+  sourceBridges: ReepMatchedBridge[];
+  apiFootballBridges: ReepBridge[];
+  targetOwnerBridges: Array<{
+    externalId: string;
+    sourceReepId: string;
+    canonicalReepId: string | null;
+    redirectStatus: "resolved";
+    rung: string | null;
+    upstreamStatus: string | null;
+  }>;
   sourceRungs: string[];
   apiFootballRungs: string[];
 }
@@ -133,11 +143,16 @@ export class ReepIdentityRegistry {
          ORDER BY provider, namespace, external_id, rung`,
       );
       targetOwnerLookup = this.database.prepare(
-        `SELECT DISTINCT canonical_reep_id AS canonicalReepId, upstream_status AS upstreamStatus
+        `SELECT DISTINCT external_id AS externalId,
+                source_reep_id AS sourceReepId,
+                canonical_reep_id AS canonicalReepId,
+                redirect_status AS redirectStatus,
+                rung,
+                upstream_status AS upstreamStatus
          FROM bridges
          WHERE provider = 'api_football' AND namespace = 'player' AND external_id = ?
            AND redirect_status = 'resolved'
-         ORDER BY canonical_reep_id`,
+         ORDER BY canonical_reep_id, source_reep_id, rung`,
       );
       this.sourceLookup = sourceLookup;
       this.canonicalLookup = canonicalLookup;
@@ -224,12 +239,21 @@ export class ReepIdentityRegistry {
   resolvePlayerEloId(sourceProvider: string, externalId: string): ReepPlayerEloResolution {
     const identity = this.resolveSourceProvider(sourceProvider, externalId);
     const source = identity.source;
-    const unavailable = (status: ReepPlayerEloResolutionStatus): ReepPlayerEloResolution => ({
+    const apiFootballBridges = identity.linkedBridges.filter((bridge) =>
+      bridge.provider === "api_football" && bridge.namespace === "player",
+    );
+    const unavailable = (
+      status: ReepPlayerEloResolutionStatus,
+      targetOwnerBridges: ReepPlayerEloResolution["targetOwnerBridges"] = [],
+    ): ReepPlayerEloResolution => ({
       status,
       releaseStamp: this.releaseStamp,
       source,
-      sourceRungs: [],
-      apiFootballRungs: [],
+      sourceBridges: identity.matchedBridges,
+      apiFootballBridges,
+      targetOwnerBridges,
+      sourceRungs: [...new Set(identity.matchedBridges.flatMap((bridge) => bridge.rung ? [bridge.rung] : []))].sort(),
+      apiFootballRungs: [...new Set(apiFootballBridges.flatMap((bridge) => bridge.rung ? [bridge.rung] : []))].sort(),
     });
 
     if (identity.status === "not_found") return unavailable("source_not_found");
@@ -239,25 +263,16 @@ export class ReepIdentityRegistry {
     const activeSourceBridges = identity.matchedBridges.filter(isCurrentUpstreamBridge);
     if (activeSourceBridges.length === 0) return unavailable("source_inactive");
 
-    const apiFootballBridges = identity.linkedBridges.filter((bridge) =>
-      bridge.provider === "api_football"
-      && bridge.namespace === "player"
-      && isCurrentUpstreamBridge(bridge),
-    );
-    const apiFootballIds = [...new Set(apiFootballBridges.map((bridge) => bridge.externalId))];
+    const currentApiFootballBridges = apiFootballBridges.filter(isCurrentUpstreamBridge);
+    const apiFootballIds = [...new Set(currentApiFootballBridges.map((bridge) => bridge.externalId))];
     if (apiFootballIds.length === 0) return unavailable("target_not_found");
     if (apiFootballIds.length !== 1) return unavailable("target_ambiguous");
 
     const apiFootballPlayerId = apiFootballIds[0]!;
-    const owners = this.targetOwnerLookup.all(apiFootballPlayerId) as Array<{
-      canonicalReepId: string | null;
-      upstreamStatus: string | null;
-    }>;
-    const currentOwners = [...new Set(owners
-      .filter((owner) => isCurrentUpstreamBridge({ upstreamStatus: owner.upstreamStatus }))
-      .flatMap((owner) => owner.canonicalReepId ? [owner.canonicalReepId] : []))];
-    if (currentOwners.length !== 1 || currentOwners[0] !== identity.reepId) {
-      return unavailable("target_ambiguous");
+    const owners = this.targetOwnerLookup.all(apiFootballPlayerId) as ReepPlayerEloResolution["targetOwnerBridges"];
+    const canonicalOwners = [...new Set(owners.flatMap((owner) => owner.canonicalReepId ? [owner.canonicalReepId] : []))];
+    if (owners.some((owner) => !owner.canonicalReepId) || canonicalOwners.length !== 1 || canonicalOwners[0] !== identity.reepId) {
+      return unavailable("target_ambiguous", owners);
     }
 
     return {
@@ -266,8 +281,11 @@ export class ReepIdentityRegistry {
       source,
       reepId: identity.reepId,
       apiFootballPlayerId,
+      sourceBridges: identity.matchedBridges,
+      apiFootballBridges,
+      targetOwnerBridges: owners,
       sourceRungs: [...new Set(activeSourceBridges.flatMap((bridge) => bridge.rung ? [bridge.rung] : []))].sort(),
-      apiFootballRungs: [...new Set(apiFootballBridges
+      apiFootballRungs: [...new Set(currentApiFootballBridges
         .filter((bridge) => bridge.externalId === apiFootballPlayerId)
         .flatMap((bridge) => bridge.rung ? [bridge.rung] : []))].sort(),
     };

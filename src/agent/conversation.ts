@@ -8,6 +8,7 @@ import {
   ConversationTurnResponseSchema,
   RecruitmentReportSchema,
   RecruitmentSearchScopeSchema,
+  createEmptyExternalSignalCoverage,
   type RecruitmentProgress,
   type CapabilityEvidence,
   type CapabilityMetricKey,
@@ -456,16 +457,7 @@ const RecruitmentState = Annotation.Root({
     default: () => ({}),
   }),
   externalSignals: replaceable<Record<string, PlayerEloSignal>>(() => ({})),
-  externalSignalCoverage: replaceable<ExternalSignalCoverage>(() => ({
-    status: "not_run",
-    disabledReason: null,
-    identityUnavailableCandidates: 0,
-    directIdentityCandidates: 0,
-    crosswalkIdentityCandidates: 0,
-    checkedCandidates: 0,
-    matchedCandidates: 0,
-    failedCandidates: 0,
-  })),
+  externalSignalCoverage: replaceable<ExternalSignalCoverage>(() => createEmptyExternalSignalCoverage()),
   historicalArchiveSamplesByPlayerId: replaceable<Record<string, HistoricalArchiveSample[]>>(() => ({})),
   historicalArchiveCoverage: replaceable<HistoricalArchiveCoverage>(() => ({
     status: "not_run",
@@ -890,26 +882,8 @@ export function createRecruitmentConversation(input: {
   const playerEloSetup = createConfiguredPlayerEloReportClient();
   const historicalArchiveSetup = createConfiguredHistoricalArchive();
   const disabledPlayerEloCoverage: ExternalSignalCoverage = playerEloSetup.status === "disabled"
-    ? {
-      status: "disabled",
-      disabledReason: playerEloSetup.reason,
-      checkedCandidates: 0,
-      identityUnavailableCandidates: 0,
-      directIdentityCandidates: 0,
-      crosswalkIdentityCandidates: 0,
-      matchedCandidates: 0,
-      failedCandidates: 0,
-    }
-    : {
-      status: "not_run",
-      disabledReason: null,
-      identityUnavailableCandidates: 0,
-      directIdentityCandidates: 0,
-      crosswalkIdentityCandidates: 0,
-      checkedCandidates: 0,
-      matchedCandidates: 0,
-      failedCandidates: 0,
-    };
+    ? createEmptyExternalSignalCoverage("disabled", playerEloSetup.reason)
+    : createEmptyExternalSignalCoverage();
   const progressCallbacksByThread = new Map<string, (progress: ProgressUpdate) => void>();
   const emitProgress = (config: LangGraphRunnableConfig, progress: ProgressUpdate) => {
     const threadId = config.configurable?.thread_id;

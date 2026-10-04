@@ -1,4 +1,4 @@
-# PlayerElo 与 Reep 的精确身份桥接
+# PlayerElo 与 Reep 的跨来源身份映射
 
 核查日期：2026-10-04。核对 Reep、PlayerElo 官方页面与工作区 Reep 索引；没有 PlayerElo 或 Reep API key，因此没有在线逐球员查询。本记录只讨论身份关联，不推定 PlayerElo 数据的展示、缓存、保留或模型处理许可。
 
