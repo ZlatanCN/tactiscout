@@ -5,6 +5,7 @@ import {
   SupplementaryCapabilityMetricDefinitions,
   PlayerProfileSchema,
   type DatasetMode,
+  type DatasetSnapshotStatus,
   type PlayerProfile,
   type Position,
   type Requirements,
@@ -15,6 +16,8 @@ import { normalizeSearchText } from "../domain/text-matching.js";
 import { SportmonksPlayerRepository, SportmonksProviderError } from "./sportmonks-provider.js";
 import { SkillCornerPlayerRepository } from "./skillcorner-provider.js";
 import { WyscoutPlayerRepository } from "./wyscout-provider.js";
+import { FbrefPlayerRepository, FbrefProviderError } from "./fbref-provider.js";
+import { CuratedDatasetRepository } from "../dataset/curated-repository.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const demoFile = path.join(projectRoot, "data", "demo-players.json");
@@ -22,6 +25,7 @@ const demoFile = path.join(projectRoot, "data", "demo-players.json");
 export interface PlayerRepository {
   readonly mode: DatasetMode;
   readonly sourceName: string;
+  getDatasetStatus?(): Promise<DatasetSnapshotStatus>;
   loadPlayers?(refresh?: boolean): Promise<PlayerProfile[]>;
   searchCandidates?(query: PlayerSearchQuery): Promise<PlayerSearchPage>;
   inspectTeam?(teamName: string): Promise<PlayerProfile[]>;
@@ -507,6 +511,7 @@ function withLocalQueries(repository: PlayerRepository): PlayerRepository {
     mode: repository.mode,
     sourceName: repository.sourceName,
     ...(repository.loadPlayers ? { loadPlayers: (refresh?: boolean) => repository.loadPlayers!(refresh) } : {}),
+    ...(repository.getDatasetStatus ? { getDatasetStatus: () => repository.getDatasetStatus!() } : {}),
     searchCandidates: async (query) => repository.searchCandidates
       ? repository.searchCandidates(query)
       : searchLoadedPlayers(await loadAllPlayers(repository), query),
@@ -601,6 +606,16 @@ export async function loadComparisonPlayers(repository: PlayerRepository, player
 
 export function createRepository(): PlayerRepository {
   const mode = (process.env.TACTISCOUT_DATA_MODE ?? "demo").trim().toLowerCase();
+  if (mode === "fbref") {
+    const cacheLifetimeText = process.env.TACTISCOUT_FBREF_CACHE_TTL_MS;
+    const cacheTtlMs = cacheLifetimeText === undefined || cacheLifetimeText.trim() === ""
+      ? undefined
+      : Number(cacheLifetimeText);
+    if (cacheLifetimeText !== undefined && cacheLifetimeText.trim() !== "" && !Number.isFinite(cacheTtlMs)) {
+      throw new FbrefProviderError("invalid_configuration", "TACTISCOUT_FBREF_CACHE_TTL_MS must be a non-negative number of milliseconds.");
+    }
+    return withLocalQueries(new FbrefPlayerRepository({ ...(cacheTtlMs === undefined ? {} : { cacheTtlMs }) }));
+  }
   if (mode === "statsbomb") {
     return withLocalQueries(new StatsBombRepository());
   }
@@ -643,6 +658,14 @@ export function createRepository(): PlayerRepository {
         .split(",")
         .map((value) => value.trim())
         .filter(Boolean),
+    }));
+  }
+  if (mode === "curated") {
+    return withLocalQueries(new CuratedDatasetRepository({
+      filePath: process.env.TACTISCOUT_DATASET_FILE
+        ? path.resolve(process.env.TACTISCOUT_DATASET_FILE)
+        : path.join(projectRoot, ".data", "tactiscout-datasets", "latest.json"),
+      allowModelProcessing: process.env.TACTISCOUT_WYSCOUT_AI_PROCESSING_ALLOWED === "true",
     }));
   }
   throw new SportmonksProviderError("invalid_configuration", `Unknown TACTISCOUT_DATA_MODE: ${mode}.`);

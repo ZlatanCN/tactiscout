@@ -8,6 +8,7 @@ import type { KnowledgeDocumentInput } from "../knowledge/schemas.js";
 import { firstPartyObservationSourceId } from "../knowledge/source-ids.js";
 import {
   PlayerObservationInputSchema,
+  PlayerObservationDimensionDefinitions,
   PlayerObservationSchema,
   type PlayerObservation,
   type PlayerObservationInput,
@@ -173,6 +174,9 @@ function toKnowledgeDocument(observation: StoredPlayerObservation): KnowledgeDoc
   const evidenceLines = [
     `球员：${observation.playerName}`,
     identity,
+    observation.teamAtObservation ? `观察时球队（由观察者记录）：${observation.teamAtObservation}` : undefined,
+    observation.observedPosition ? `观察时位置：${observation.observedPosition}` : undefined,
+    observation.observedRole ? `观察时职责（由观察者描述）：${observation.observedRole}` : undefined,
     `观察人：${observation.observer}`,
     `观察日期：${observation.observedAt}`,
     observation.competition ? `赛事：${observation.competition}` : undefined,
@@ -181,8 +185,14 @@ function toKnowledgeDocument(observation: StoredPlayerObservation): KnowledgeDoc
     observation.matchMinute === null ? undefined : `比赛时间点：第 ${observation.matchMinute} 分钟`,
     `作者记录的优势：${observation.strengths.join("；")}`,
     observation.risks.length ? `待核实风险：${observation.risks.join("；")}` : "待核实风险：作者未记录明确风险。",
+    ...observation.ratings.map((rating) => {
+      const dimension = PlayerObservationDimensionDefinitions[rating.dimension];
+      const phase = dimension.phase === "in_possession" ? "有球" : dimension.phase === "out_of_possession" ? "无球" : "攻防转换";
+      const minute = rating.matchMinute === null ? "" : `（第 ${rating.matchMinute} 分钟）`;
+      return `球探主观评估 · ${phase} · ${dimension.label} · ${rating.rating}/5${minute}：${rating.evidence}`;
+    }),
     `比赛观察：${observation.evidenceNote}`,
-    "该内容是作者自录的主观球探观察，不是经独立核实的统计事实，也不直接构成能力评分。",
+    "该内容由作者自录。1–5 档是观察者对该场样本的主观判断，不是统计事实、跨球员标准化分数或未来表现预测；不同观察记录不会自动求平均或进入适配评分。",
   ].filter(Boolean);
   const reference = observation.sourceReferenceUrl ? `；参考链接：${observation.sourceReferenceUrl}` : "";
 

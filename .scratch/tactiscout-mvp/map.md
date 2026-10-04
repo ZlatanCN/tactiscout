@@ -9,13 +9,20 @@ Labels: wayfinder:map
 ## Notes
 
 - 首版重点是球员能力评估与推荐，不是把自然语言转换成大量筛选字段。
-- 当前唯一现役候选池 provider 是可选 Sportmonks；它只覆盖账号开通并配置的赛事/赛季，真实账户联调仍待完成。StatsBomb、Wyscout 与 SkillCorner 提供有明确时间范围的历史比赛或聚合样本；默认 demo 数据是虚构的。产品必须区分这些来源范围、已查证事实、推断和数据缺口。
+- 最新数据方向（2026-10-04）：自建指 TactiScout 自己维护采集/导入、规范化、指标计算、版本和质量报告，不要求用户手工创建完整球员库。已实现 `pnpm dataset:refresh`，可从 Figshare 固定版重新获取/校验 Wyscout 2017/18 五大联赛原始数据并构建快照；真实运行覆盖 1,826 场、2,561 名球员。它仍是历史数据而非现役池。StatsBomb 2023/24 德甲官方清单只有 34 场，且用户协议限制原始数据分发/商业使用，不作为广域候选库。第一方观察补充战术语境；FBref 不作为批量采集底座。研究见[自建数据集可行性](research/self-built-scouting-dataset-feasibility-2026-10.md)，采集规程见 [first-party-observation-protocol.md](../../docs/scouting/first-party-observation-protocol.md)，执行见 [issue 40](issues/40-tactiscout-owned-scouting-dataset.md) 与 [issue 41](issues/41-structured-first-party-observations.md)。
 - 全 TypeScript；当前技术栈是 React、Fastify 和 LangGraph。
 - 根目录 `CONTEXT.md` 是唯一领域词汇表；重要术语按其中定义使用。
 - [MVP 规格](spec.md) 收录用户故事、接口约定和实现决策；[球探与 Agent 流程研究](research/football-recruitment-and-agent-workflow.md)记录来源与产品推导；[数据源与抓取边界研究](research/football-data-sources-and-crawling.md)记录联网能力、授权路线与数据出处设计；[RAG 实践与足球语料调查](research/scouting-rag-practices-and-sources.md)记录检索实践和可用来源；[LangGraph Agent 与 Harness 调研](research/langgraph-agent-harness-patterns.md)对比官方开源实现与 TactiScout 架构；[许可感知的双语料 RAG 设计](issues/10-permission-aware-rag-design.md)确定产品原则。
+- 用户最新确认可扩大数据源，同时继续建设 TactiScout 自己维护的数据管线。`curated` 的历史赛季、指标覆盖、来源及原生/派生字段边界已进入 Agent 指令、报告限制和数据范围卡；Wyscout 刷新链路真实构建过 2,682 条球员赛季记录。下一步聚焦 issue 39：将候选发现、现役身份线索、可比表现与第一方观察按来源分层组合；先完成一手来源复核与至少一条可端到端验证的来源组合，不因 provider 数量扩张而降低身份和口径门槛。
+- 当前执行中的采集切片为 [issue 41](issues/41-structured-first-party-observations.md)：能力档位仅是有具体比赛依据的人类判断，跨样本校准和双人标注评估仍未完成。
 - [补充球员表现数据源调查](research/additional-player-evidence-sources-2026-10.md)比较 SkillCorner、Metrica、Wyscout、StatsBomb 和 football-data.org，记录字段增益、覆盖与数据使用边界。
 - [具名球员表现数据许可与验证路径](research/player-performance-data-licensing-2026-10.md)核对 Wyscout、IDSSE、Metrica、OpenFootball 和 SkillCorner 的一手来源；Wyscout 2017/18 Figshare 数据项标明 CC BY 4.0，适合本机历史数据验证，不代表当前转会市场。
 - [足球数据源扩展调查](research/football-data-source-expansion-2026-10.md)核对 Sportmonks、API-Football、football-data.org、OpenLigaDB 与开放历史数据；没有找到零预算且同时具备现役阵容、球员表现指标及可公开展示授权的主数据源，Sportmonks 最适合延续现有实时 provider。
+- [单一开放足球数据源可行性](research/single-source-open-football-data-2026-10.md)保留此前调查结论；用户现已重新允许扩大来源范围，最新路线和一手来源边界见 [扩展数据源复核](research/football-data-source-research-refresh-2026-10.md)。
+- [当前球员数据源与自建路径复核](research/current-player-data-source-options-2026-10.md)重新比较 PlayerElo、Sportmonks、football-data.org、TheSportsDB、Reep、Wikidata、OpenLigaDB、StatsBomb 与 Wyscout；下一步优先评估 PlayerElo 的一联赛、只读外部信号路径，但当前无 API key，也未验证展示/保留/模型处理权限。
+- [FBref 当前球员数据与接入评估](research/fbref-data-integration-2026-10.md)确认当前可查五大联赛标准统计与多类常规表现表，同时记录 2026 年高级足球数据缩减、球员列表覆盖不完整及自动化/AI 使用条款边界。
+- [issue 36：FBref 五大联赛当前表现数据源](issues/36-fbref-current-big5-provider.md)：按用户选择接入当前 Big 5 球员表现页；保留来源 ID 和可追溯链接，空列不补零，公开页低频抓取且遇到访问拒绝不重试。
+- [issue 37：FBref 访问拒绝时确定性结束调查](issues/37-terminal-source-access-failure.md)：403/429 应由 LangGraph 明确提示“数据源无法访问”，不能让模型将它解释为空候选或继续发起无关追问。
 - [新增球员与表现数据源调查](research/additional-player-data-options-2026-10.md)进一步核查 TheSportsDB、Afriskaut、Wikidata、Impect 与 Fantasy Premier League。当前结论：TheSportsDB 可 GO 做有限的只读 roster enrichment 验证，但公开部署应走 $9/月应用计划、能力评分暂 NO-GO、模型处理/缓存保留范围待书面确认；Afriskaut 可作为带署名的本地 2024 青少年事件 benchmark，不能当职业转会池，具名未成年资料的公开/模型处理先确认隐私和参与者授权；FPL 自动抽取 NO-GO。
 - [Wyscout 真实数据 smoke test](research/wyscout-real-data-smoke-2026-10.md)记录对官方 Figshare 文件的本机联调结果：默认五大联赛共 2,682 条历史球员赛季记录，真实文件中的嵌套阵容与哨兵字段已由 adapter 覆盖；源文件哈希和出处保存在 Git 忽略目录。
 - [StatsBomb 射门质量证据调查](research/statsbomb-shot-quality-evidence-2026-10.md)核对官方 schema、事件样例和数据使用协议；建议只在本机派生并展示非点球 xG，缺字段不补零，公开分析前核实协议并附官方 logo。
@@ -50,6 +57,9 @@ Labels: wayfinder:map
 - 使用 `.scratch/<feature>/` 保存地图、规格和单独的问题文件；本地 triage 标签沿用项目默认值。
 
 ## Decisions-so-far
+- 最新方向（2026-10-04）：`curated` 候选查询使用 TactiScout 版本化快照；当前快照来自 Wyscout 2017/18。`pnpm dataset:refresh` 可从固定 Figshare 版本重新获取、校验和重建。第一方观察是有授权的定性补充层；其他 provider 只有在覆盖/指标增益明确时再接入。详见 [issue 40](issues/40-tactiscout-owned-scouting-dataset.md) 和[调查](research/self-built-scouting-dataset-feasibility-2026-10.md)。
+- [issue 37](issues/37-terminal-source-access-failure.md)：FBref 任一页面的 403/429 触发 LangGraph 确定性结束和明确错误报告，不会被转换成“无候选”或模型的后续追问；抓取器先请求标准页，其余页面串行且至少间隔 1 秒。
+- [issue 38](issues/38-stable-local-preview-port.md)：开发网页固定绑定 127.0.0.1:5173，端口冲突时显式失败，避免悄悄打开包含旧前端契约的替代预览。
 - [面向按需调查的数据源查询契约](issues/32-query-scoped-player-source-contract.md)：保留 LangGraph 的工具选择与分页轨迹；provider 只执行结构化检索，远端总数未知时必须如实报告，硬条件不受支持时查询失败，不能加载全库或将失败伪装成空名单。PlayerElo 的 Elo/EAR 仅作为有来源的整体表现信号，不能替代 TactiScout 自己的战术评估。客户端不提供引援匹配分或估值接口；report-only 集成默认关闭，启用前仍需确认展示权、本地保留权及 API key。
 - [Reep 跨来源身份注册表](issues/33-reep-cross-source-identity-registry.md)：以 `(provider, namespace, external_id)` 精确映射 Reep ID；按 release redirects 解析合并 ID，撤销/隐藏 ID 不可解析为有效身份。同名不是身份凭据，映射不合并 provider 档案，也不作为表现证据。
 - [Wyscout 跨来源历史档案补充](issues/34-wyscout-cross-source-archive-enrichment.md)：采用 post-review、report-only LangGraph 节点，串接当前候选来源 ID → Reep → Wyscout ID → 本地 2017/18 表现记录；只读本地数据，不将历史记录暴露给 planner/model、当前评分或推荐顺序。报告 schema 与 UI 保留映射依据、release、来源署名、赛季/赛事/样本；Wyscout 主数据模式不会重复附加自身档案。
@@ -93,6 +103,7 @@ Labels: wayfinder:map
 - [寻找可入库的具名球员报告语料](issues/21-open-player-report-corpus.md)：以一手来源验证球探报告的自动访问、持久化、AI/RAG 和展示权，选定可用来源或记录无可验证授权的结论。
 - [撤销知识来源并清除索引](issues/22-revoke-and-purge-knowledge-source.md)：运行中读取最新来源许可、检索前过滤失效语料，并显式删除某来源在当前本地索引版本中的片段。
 - [第一方球探观察记录](issues/23-first-party-player-observations.md)：在本机维护具名比赛观察，以分开的逐条许可控制保存和 Agent 检索；定性观察保留作者与来源，不能直接变成球员能力分。
+- [结构化第一方比赛观察](issues/41-structured-first-party-observations.md)：可选记录单场主观能力档和具体场景；不跨比赛/观察者求平均，不进入适配分；双人标注验证仍待后续实采样本。
 - [来源特定的可追溯表现指标](issues/24-supplementary-performance-evidence.md)：研究 SkillCorner 2024/25 A-League 赛季聚合，并准备以来源身份、指标定义、单位和样本覆盖承载额外表现指标；真实球员级数据本地保存与模型处理各自 opt-in，许可未核实前不入仓或公开。
 - Wyscout adapter 已按官方 v2 事件文档区分 301 助攻与 302 关键传球；302 不再冒充射门助攻。官方 Figshare 真实数据已本机验证：2,682 条跨五大联赛历史记录均有对应事件文件，关键传球可用、射门助攻不可用。样本分钟由首发/换人记录估算，报告说明不含补时且未校正红牌；原始数据和 SHA-256 provenance 留在 Git 忽略的 `.data/`。
 - 首个可选当前球员数据 provider 选择 Sportmonks，但仅在显式配置时启用；保留 StatsBomb 和演示数据作为独立来源，不合并跨 provider 的球员 ID。模型处理许可尚未从 provider 条款中确认，故 Sportmonks 数据经模型处理默认为关闭。
@@ -102,8 +113,8 @@ Labels: wayfinder:map
 
 - 如何按实际可用语料整理 RAG/Agent 标注样本、阈值和候选排序的可信评估；缺少球探标注时不宣称客观排序准确率。
 - 当前来源发现只覆盖 PLOS 学术文章；通用网页搜索 provider、最终 embedding 模型和 RAG/Agent 评测阈值仍待验证。
-- 当前球员池的授权数据源、目标联赛覆盖，以及线上缓存/展示/外部 AI 使用范围。Sportmonks 凭据目前未配置；Wyscout 2017/18 公开数据只能支持历史表现分析验证。
-- PlayerElo API key、报告展示权和应用管理的本地保留权尚待确认；当前 report-only 节点不会向 Ollama 发送数据，所有开关默认关闭。若以后要将 PlayerElo 数据交给模型处理，需另行确认对应权限。
+- FBref provider 已接入，但服务端联通确认收到标准 Big 5 页 HTTP 403，未重试或绕过访问检查；issue 36 保持 claimed，需在可访问环境中再确认 live 数据链路。FBref 对 AI prompting 的使用边界也未因非商业用途而消失。Wyscout 2017/18 公开数据只用于历史表现验证，不能填补现役候选池。
+- PlayerElo 官方列出免费 hobby 档每月 500 次调用，但所有接口要求 Bearer key；2026-10-04 官网 key/subscription 入口显示暂不可用。现有 report-only 节点仍默认关闭，等待免费 key 入口可用以及展示/本地保留范围确认；不会把它假设成无需凭据的 FBref 替代品。
 - Reep resolver 已导入 `20261003T052950Z` release，并对一个 Sportmonks ID 完成 Wyscout 本地档案 smoke。StatsBomb/SkillCorner 和真实候选池的 provider bridge 覆盖率、live Sportmonks API 联调及 snapshot 更新流程仍待验证。
 
 ## Out of scope

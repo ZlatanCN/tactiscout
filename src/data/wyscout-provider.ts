@@ -575,6 +575,7 @@ function buildPlayer(profile: MutablePlayer, retrievedAt: string, matchEventIds:
     competition: profile.competition,
     season: profile.season,
     minutes: profile.minutes,
+    appearanceMatchCount: profile.appearanceMatchIds.size,
     stats: {
       goals: profile.goals,
       assists: profile.assists,

@@ -1,14 +1,19 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   deletePlayerObservation,
   getPlayerObservations,
   savePlayerObservation,
 } from "./api";
 import {
+  PlayerObservationDimensionDefinitions,
   PlayerObservationInputSchema,
+  PlayerObservationRatingSchema,
+  PlayerObservationDimensionSchema,
   type PlayerObservation,
   type PlayerObservationInput,
 } from "../../src/observations/schemas.js";
+import { PositionSchema } from "../../src/domain/schemas.js";
+import { summarizePlayerObservationDataset } from "../../src/observations/dataset-summary.js";
 
 interface Props {
   onClose: () => void;
@@ -19,6 +24,9 @@ interface Draft {
   playerAliases: string;
   playerIdentityProvider: string;
   externalPlayerId: string;
+  teamAtObservation: string;
+  observedPosition: string;
+  observedRole: string;
   competition: string;
   season: string;
   match: string;
@@ -27,6 +35,7 @@ interface Draft {
   observer: string;
   strengths: string;
   risks: string;
+  ratings: Array<{ dimension: string; rating: string; matchMinute: string; evidence: string }>;
   evidenceNote: string;
   sourceReferenceUrl: string;
   allowPersistentStorage: boolean;
@@ -43,6 +52,9 @@ function emptyDraft(): Draft {
     playerAliases: "",
     playerIdentityProvider: "",
     externalPlayerId: "",
+    teamAtObservation: "",
+    observedPosition: "",
+    observedRole: "",
     competition: "",
     season: "",
     match: "",
@@ -51,6 +63,7 @@ function emptyDraft(): Draft {
     observer: "",
     strengths: "",
     risks: "",
+    ratings: [],
     evidenceNote: "",
     sourceReferenceUrl: "",
     allowPersistentStorage: false,
@@ -64,6 +77,9 @@ function draftFromRecord(record: PlayerObservation): Draft {
     playerAliases: record.playerAliases.join("\n"),
     playerIdentityProvider: record.playerIdentityProvider ?? "",
     externalPlayerId: record.externalPlayerId ?? "",
+    teamAtObservation: record.teamAtObservation ?? "",
+    observedPosition: record.observedPosition ?? "",
+    observedRole: record.observedRole ?? "",
     competition: record.competition ?? "",
     season: record.season ?? "",
     match: record.match ?? "",
@@ -72,6 +88,12 @@ function draftFromRecord(record: PlayerObservation): Draft {
     observer: record.observer,
     strengths: record.strengths.join("\n"),
     risks: record.risks.join("\n"),
+    ratings: record.ratings.map((rating) => ({
+      dimension: rating.dimension,
+      rating: String(rating.rating),
+      matchMinute: rating.matchMinute === null ? "" : String(rating.matchMinute),
+      evidence: rating.evidence,
+    })),
     evidenceNote: record.evidenceNote,
     sourceReferenceUrl: record.sourceReferenceUrl ?? "",
     allowPersistentStorage: record.allowPersistentStorage,
@@ -89,6 +111,9 @@ function inputFromDraft(draft: Draft): PlayerObservationInput {
     playerAliases: lines(draft.playerAliases),
     playerIdentityProvider: draft.playerIdentityProvider.trim() || null,
     externalPlayerId: draft.externalPlayerId.trim() || null,
+    teamAtObservation: draft.teamAtObservation.trim() || null,
+    observedPosition: draft.observedPosition || null,
+    observedRole: draft.observedRole.trim() || null,
     competition: draft.competition.trim() || null,
     season: draft.season.trim() || null,
     match: draft.match.trim() || null,
@@ -97,6 +122,12 @@ function inputFromDraft(draft: Draft): PlayerObservationInput {
     observer: draft.observer,
     strengths: lines(draft.strengths),
     risks: lines(draft.risks),
+    ratings: draft.ratings.map((rating) => PlayerObservationRatingSchema.parse({
+      dimension: PlayerObservationDimensionSchema.parse(rating.dimension),
+      rating: Number(rating.rating),
+      matchMinute: rating.matchMinute.trim() ? Number(rating.matchMinute) : null,
+      evidence: rating.evidence,
+    })),
     evidenceNote: draft.evidenceNote,
     sourceReferenceUrl: draft.sourceReferenceUrl.trim() || null,
     allowPersistentStorage: draft.allowPersistentStorage,
@@ -120,6 +151,7 @@ export function PlayerObservationsDialog({ onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const selectedRecord = records.find((record) => record.id === selectedId);
+  const datasetSummary = useMemo(() => summarizePlayerObservationDataset(records), [records]);
   closeRef.current = onClose;
   savingRef.current = saving;
 
@@ -180,6 +212,25 @@ export function PlayerObservationsDialog({ onClose }: Props) {
 
   function updateDraft<Key extends keyof Draft>(key: Key, value: Draft[Key]) {
     setDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateRating(index: number, field: keyof Draft["ratings"][number], value: string) {
+    setDraft((current) => ({
+      ...current,
+      ratings: current.ratings.map((rating, currentIndex) => currentIndex === index ? { ...rating, [field]: value } : rating),
+    }));
+  }
+
+  function addRating() {
+    if (draft.ratings.length >= 8) return;
+    const selected = new Set(draft.ratings.map((rating) => rating.dimension));
+    const nextDimension = PlayerObservationDimensionSchema.options.find((dimension) => !selected.has(dimension))
+      ?? PlayerObservationDimensionSchema.options[0];
+    updateDraft("ratings", [...draft.ratings, { dimension: nextDimension, rating: "", matchMinute: "", evidence: "" }]);
+  }
+
+  function removeRating(index: number) {
+    updateDraft("ratings", draft.ratings.filter((_rating, currentIndex) => currentIndex !== index));
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -250,7 +301,7 @@ export function PlayerObservationsDialog({ onClose }: Props) {
           <div>
             <span className="section-kicker">FIRST-PARTY SCOUTING NOTES</span>
             <h2 id="observation-dialog-title">球探观察记录</h2>
-            <p id="observation-dialog-description">记录自己看比赛时的观察。这里不会抓取你填写的外部链接，也不应粘贴第三方报告全文。</p>
+            <p id="observation-dialog-description">每条记录对应一名球员的一场比赛。写明赛事、赛季、比赛和具体场景；这里不会抓取外部链接，也不应粘贴第三方报告全文。</p>
           </div>
           <button type="button" className="observation-close" onClick={onClose} aria-label="关闭球探观察" disabled={saving}>×</button>
         </header>
@@ -258,13 +309,29 @@ export function PlayerObservationsDialog({ onClose }: Props) {
         <div className="observation-dialog-body">
           <aside className="observation-library" aria-label="已有观察记录">
             <button type="button" className={`observation-new-button ${selectedId === "new" ? "selected" : ""}`} onClick={() => { setNotice(null); setSelectedId("new"); }}>＋ 新建观察</button>
+            <section className="observation-dataset-summary" aria-label="自采观察数据概况">
+              <div className="observation-dataset-summary-heading">
+                <strong>自采样本</strong>
+                <span>按记录统计，不按姓名合并</span>
+              </div>
+              <div className="observation-dataset-stats">
+                <div><strong>{datasetSummary.observationRecords}</strong><span>场次记录</span></div>
+                <div><strong>{datasetSummary.matchScopedRecords}/{datasetSummary.observationRecords}</strong><span>赛事、赛季、比赛齐全</span></div>
+                <div><strong>{datasetSummary.ratingEntries}</strong><span>条主观维度判断</span></div>
+                <div><strong>{datasetSummary.indexedRecords}</strong><span>已授权检索</span></div>
+              </div>
+              {datasetSummary.ratingEntries > 0 && <div className="observation-dataset-dimensions" aria-label="各能力维度记录数">
+                {datasetSummary.dimensionCoverage.filter((item) => item.recordCount > 0).map((item) => <span key={item.dimension}>{item.label}<b>{item.recordCount}</b></span>)}
+              </div>}
+              {datasetSummary.observationRecords === 0 && <p className="observation-dataset-empty">还没有真实样本。先固定一个位置和比赛范围，再按同一量表记录场景；没有看到的维度留空。</p>}
+            </section>
             {loading ? <p className="observation-list-state">正在读取本机记录…</p> : records.length === 0
               ? <p className="observation-list-state">还没有自录观察。</p>
               : records.map((record) => (
                 <button type="button" className={`observation-list-card ${selectedId === record.id ? "selected" : ""}`} key={record.id} onClick={() => { setNotice(null); setSelectedId(record.id); }}>
                   <strong>{record.playerName}</strong>
                   <span>{record.observedAt} · {record.competition ?? "赛事待补"}</span>
-                  <small>{record.indexStatus === "indexed" ? "已加入 Agent 检索" : record.indexStatus === "index_failed" ? "索引待重试" : "仅保存在本机"}</small>
+                  <small>{record.ratings.length ? `${record.ratings.length} 项能力观察 · ` : ""}{record.indexStatus === "indexed" ? "已加入 Agent 检索" : record.indexStatus === "index_failed" ? "索引待重试" : "仅保存在本机"}</small>
                 </button>
               ))}
             <p className="observation-storage-note">本机服务保存于忽略提交的 `.data/player-observations.json`。</p>
@@ -279,6 +346,9 @@ export function PlayerObservationsDialog({ onClose }: Props) {
               <label className="observation-field"><span>其他球员姓名</span><textarea rows={2} value={draft.playerAliases} onChange={(event) => updateDraft("playerAliases", event.target.value)} placeholder="每行一个，例如常用拼写" /></label>
               <label className="observation-field"><span>关联数据来源</span><input value={draft.playerIdentityProvider} onChange={(event) => updateDraft("playerIdentityProvider", event.target.value)} placeholder="例如 Sportmonks" maxLength={80} /></label>
               <label className="observation-field"><span>来源中的球员 ID</span><input value={draft.externalPlayerId} onChange={(event) => updateDraft("externalPlayerId", event.target.value)} placeholder="与上项同时填写" maxLength={120} /></label>
+              <label className="observation-field"><span>观察时效力球队</span><input value={draft.teamAtObservation} onChange={(event) => updateDraft("teamAtObservation", event.target.value)} placeholder="由观察者记录" maxLength={120} /></label>
+              <label className="observation-field"><span>观察时位置</span><select value={draft.observedPosition} onChange={(event) => updateDraft("observedPosition", event.target.value)}><option value="">未知 / 未记录</option>{PositionSchema.options.map((position) => <option key={position} value={position}>{position}</option>)}</select></label>
+              <label className="observation-field observation-field-wide"><span>观察时职责</span><input value={draft.observedRole} onChange={(event) => updateDraft("observedRole", event.target.value)} placeholder="例如右侧中卫、内收边后卫；只记这场比赛中的职责" maxLength={120} /></label>
               <label className="observation-field"><span>赛事</span><input value={draft.competition} onChange={(event) => updateDraft("competition", event.target.value)} placeholder="例如 Bundesliga" maxLength={120} /></label>
               <label className="observation-field"><span>赛季</span><input value={draft.season} onChange={(event) => updateDraft("season", event.target.value)} placeholder="例如 2025/26" maxLength={40} /></label>
               <label className="observation-field observation-field-wide"><span>比赛</span><input value={draft.match} onChange={(event) => updateDraft("match", event.target.value)} placeholder="例如 Bayern vs Example FC" maxLength={180} /></label>
@@ -286,6 +356,26 @@ export function PlayerObservationsDialog({ onClose }: Props) {
               <label className="observation-field observation-field-wide"><span>表现优势 <b>*</b></span><textarea rows={3} value={draft.strengths} onChange={(event) => updateDraft("strengths", event.target.value)} placeholder="每行一条，只记录你亲眼观察到的内容" required /></label>
               <label className="observation-field observation-field-wide"><span>待核实风险</span><textarea rows={3} value={draft.risks} onChange={(event) => updateDraft("risks", event.target.value)} placeholder="每行一条；没有明确风险时可以留空" /></label>
               <label className="observation-field observation-field-wide"><span>具体比赛观察 <b>*</b></span><textarea rows={4} value={draft.evidenceNote} onChange={(event) => updateDraft("evidenceNote", event.target.value)} placeholder="记下比赛场景、动作和结果；至少 20 个字符。它仍是你的主观观察，不等于统计事实。" required /></label>
+              <details className="observation-ratings observation-field-wide">
+                <summary>结构化能力观察 <span>可选 · 按本场样本记录</span></summary>
+                <p>评分由观察者填写，按该球员本场职责和比赛级别判断。1 表示明显短板，3 表示表现参差或一般，5 表示多次展现突出表现；无证据时留空。不同记录不会自动平均或计入适配分。</p>
+                <div className="observation-rating-list">
+                  {draft.ratings.map((rating, index) => {
+                    const dimension = PlayerObservationDimensionSchema.safeParse(rating.dimension);
+                    const definition = dimension.success ? PlayerObservationDimensionDefinitions[dimension.data] : undefined;
+                    return <fieldset className="observation-rating-card" key={`${rating.dimension}-${index}`}>
+                      <div className="observation-rating-controls">
+                        <label className="observation-field"><span>能力维度 <b>*</b></span><select value={rating.dimension} onChange={(event) => updateRating(index, "dimension", event.target.value)}>{Object.entries(PlayerObservationDimensionDefinitions).map(([key, value]) => <option key={key} value={key}>{value.label} · {value.phase === "in_possession" ? "有球" : value.phase === "out_of_possession" ? "无球" : "转换"}</option>)}</select></label>
+                        <label className="observation-field"><span>主观档位 <b>*</b></span><select value={rating.rating} onChange={(event) => updateRating(index, "rating", event.target.value)} required><option value="">选择 1–5</option><option value="1">1 · 明显短板</option><option value="2">2 · 偏弱</option><option value="3">3 · 一般 / 参差</option><option value="4">4 · 经常展现优势</option><option value="5">5 · 多次突出</option></select></label>
+                        <label className="observation-field"><span>比赛分钟</span><input type="number" min={0} max={150} value={rating.matchMinute} onChange={(event) => updateRating(index, "matchMinute", event.target.value)} placeholder="可选" /></label>
+                        <button type="button" className="text-button danger-text observation-rating-remove" onClick={() => removeRating(index)}>移除此项</button>
+                      </div>
+                      <label className="observation-field"><span>支持此判断的具体场景 <b>*</b>{definition ? ` · ${definition.description}` : ""}</span><textarea rows={2} value={rating.evidence} onChange={(event) => updateRating(index, "evidence", event.target.value)} placeholder="描述对手压力、球员动作、结果；至少 20 个字符" required /></label>
+                    </fieldset>;
+                  })}
+                </div>
+                <button type="button" className="observation-rating-add" onClick={addRating} disabled={draft.ratings.length >= 8}>＋ 添加一个维度</button>
+              </details>
               <label className="observation-field observation-field-wide"><span>参考链接</span><input type="url" value={draft.sourceReferenceUrl} onChange={(event) => updateDraft("sourceReferenceUrl", event.target.value)} placeholder="可选，仅作为出处链接；不会自动访问或抓取" /></label>
             </div>
 

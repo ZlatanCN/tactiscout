@@ -120,11 +120,14 @@ const agentInstructions = [
   "球员报告检索应一次包含所有已评估候选人的姓名。若检索无结果且没有新候选人需要核验，不要重复检索相同报告范围；说明索引无结果后继续完成报告。",
   "在至少调用一个球队/候选/评估数据工具前，不得向用户提问或提交最终报告；如信息不足，先调查可用证据再决定是否提问。不能因为年龄、预算或位置未说明就开场发送问卷。只有关键角色歧义会改变候选集时才提出一个简短问题，并说明原因。用户回答后继续原案件。",
   "inspect_team 返回所选数据源中可用的阵容样本。只有 source identity 明确标记 isCurrentSeason=true 的 Sportmonks 数据才可用于描述该来源记录的当前赛季阵容；这不代表范围外的完整市场覆盖。StatsBomb Open Data 只覆盖指定赛事/赛季；演示数据是虚构的。",
+  "若数据模式为 FBref，只能把已读取到的五大联赛赛季表现记录称为候选线索，不得称为完整注册名单或完整转会市场。位置仅有门将/后卫/中场/前锋等宽泛分类；年龄按球员出生日期和抓取日期计算。严格按 availableStats 判断字段是否存在，不能把空列说成 0；FBref 页面不支持合同、身价、预算、伤病或转会意愿判断。",
   "若数据模式为 SkillCorner Open Data，球员指标来自 2024/25 澳大利亚 A-League 历史样例，不能描述为当前球员市场或欧洲联赛候选池。只引用 evaluate_candidates 工具返回的补充指标；保留原指标口径、单位、场次和来源字段，不自行把跑动/传球指标转换成评分或潜力结论。",
   "若数据模式为 StatsBomb Open Data，球员与比赛指标只对应实际读取到的赛事/赛季历史样本。非点球 xG 指标是将 StatsBomb 每次射门的 shot.statsbomb_xg 按非点球射门和实际分钟聚合的派生统计；它表示机会数量/质量，不代表射门终结能力或未来进球。只引用 evaluate_candidates 返回且样本覆盖完整的指标；保留非点球口径、样本场次/分钟/射门数和 StatsBomb 来源，不把缺失数据说成 0。",
   "若数据模式为 Wyscout Open Data，球员、球队、年龄和统计只对应 2017/18 历史比赛样本，不是现役球员池。不要据此断言当前俱乐部、当前年龄、转会可行性或未来能力；只引用 evaluate_candidates 返回的指标。助攻标签 301、关键传球标签 302 是不同指标，关键传球不是射门助攻；当前数据不支持射门助攻。‘渐进传球（推算）’和‘渐进传球成功率（推算）’是 TactiScout 根据方向坐标、105 米场地长度假设和 Wyscout 阈值计算的估计值，不是 Wyscout 直接提供的指标；仅在坐标及成功/失败标签完整时可用。‘地面防守对抗 /90’计 Ground defending duel 子事件，‘明确胜出占比’按标签 703 计算且包含 701 明确失利和 702 中性结果；这是较简单的事件分类，不能改称通常意义的对抗胜率、抢断成功率或夺回球权次数。出场分钟由首发阵容与换人分钟估算，不含补时且未校正红牌等特殊情况。报告须保留历史范围、指标口径和 CC BY 4.0 来源。",
+  "若数据模式为 TactiScout 自建数据集（curated），当前快照是由 Wyscout 2017/18 历史比赛事件按固定规则集构建的历史统计样本，不是现役球员池。不得将历史球队、年龄或表现描述成当前事实，也不得推断当前效力、转会可行性或未来能力。只引用 evaluate_candidates 返回的指标；明确区分来源原生事件计数与 TactiScout 派生估算，并保留样本赛季、指标定义、缺失状态及 CC BY 4.0 来源署名。渐进传球是根据坐标和固定场地长度假设计算的估算；地面防守对抗胜出占比包含中性结果作为分母的一部分，不得称为标准对抗胜率。估算出场分钟不含补时，也未校正红牌等特殊情况。",
   "search_candidates 是向当前数据源发起的发现查询，不按能力排序。默认保留所有出场样本；不要静默设置最低分钟数，除非用户明确提出样本门槛。结果按来源返回的分页游标继续查询后再挑选评估对象。如果 matchingRecords 为 null，表示来源未提供精确匹配总数，不能解释成零命中或完整市场；只能依据 nextOffset 判断是否还有下一页。",
   "如果候选搜索工具返回错误或提示某个明确条件未被来源应用，不能把错误当成空名单，也不能推荐不满足该条件的球员；应说明数据源无法核实/执行该条件，再判断是否有其他可用查询或需要用户调整需求。",
+  "FBref 返回 errorCode=blocked 或 rate_limit 时，本轮停止 FBref 查询，不重复尝试、不把错误解释成没有符合条件的球员；明确告诉用户来源拒绝了请求，当前无法用该来源生成候选名单。",
   "位置只能按用户明确指定的细分角色收窄。用户只说泛称‘中场’、‘后卫’、‘前锋’或‘能踢中场’时，不要自行推断成 CM、AM 等单一子位置；search_candidates.position 必须为 null，先广泛发现候选，再依据主位置和能力证据决定深入评估谁。只有用户明确说后腰、中前卫、前腰等具体角色时，才用单一位置作为硬筛选。",
   "当用户要求寻找某名球员的‘替代者/接班人/替补’时，将该球员作为参考画像，不把他当作候选过滤条件。search_candidates.playerName 只用于核验球员报告新发现的候选人；绝不能用参考球员姓名筛选候选池。当前没有单独的参考球员档案工具，因此不能假装已核验参考球员的现役球队、联赛或详细数据。若用户没有说明具体场上角色，先完成方法资料和一次宽范围候选检索，再问一个聚焦角色的问题；回答前不得直接完成推荐。",
   "参考球员在本地数据中查不到，不等于用户需求不清楚，也不得因此要求用户确认球员身份或是否跨联赛搜索。用户已明确说‘前锋’等宽泛位置时，先按这个位置广泛发现候选人；只有用户自己提出年龄、预算、联赛或赛季偏好时，才将它们作为限制或追问。现有工具只提供历史比赛样本，不提供球员现役俱乐部、当前联赛或完整现役名单；禁止凭模型记忆断言这些事实，也不要把目标球队所属联赛当作候选球员的搜索范围。",
@@ -145,6 +148,7 @@ export function conclusionInstructions(dataMode: DatasetMode): string {
     "能力画像只描述数据支持的比赛表现。没有报告检索结果时 reportObservations 必须为空；球员观察只能引用本轮检索文档及其实体，不能把相关比赛指标说成已证明观察正确。",
     "不得凭记忆声称现役俱乐部、联赛、当前年龄、转会可行性或合同预算；目标球队仅是引援语境。",
     ...(dataMode === "wyscout" ? ["Wyscout 数据仅为 2017/18 历史样本，不能代表现役球员池；报告说明 CC BY 4.0 来源。"] : []),
+    ...(dataMode === "curated" ? ["当前 TactiScout 自建快照来自 Wyscout 2017/18 历史比赛数据，不能代表现役球员池；报告说明自建快照版本、历史赛事/赛季边界、CC BY 4.0 来源及缺失指标状态。"] : []),
     ...(dataMode === "skillcorner" ? ["SkillCorner 数据仅为 2024/25 澳大利亚 A-League 历史样例；保留来源指标口径，不推断潜力或综合能力。"] : []),
   ].join("\n");
 }
@@ -488,6 +492,7 @@ const RecruitmentState = Annotation.Root({
   hasSearchedPlayerReports: replaceable<boolean>(() => false),
   methodologySearchFailed: replaceable<boolean>(() => false),
   playerReportSearchFailed: replaceable<boolean>(() => false),
+  sourceAccessFailure: replaceable<{ code: "blocked" | "rate_limit"; message: string } | null>(() => null),
   policyBlocked: replaceable<boolean>(() => false),
   policyBlockedRepeatCount: replaceable<number>(() => 0),
   policyLoopStopped: replaceable<boolean>(() => false),
@@ -820,9 +825,21 @@ function limitationsFor(state: State, repository: PlayerRepository, action: Fini
   const limitations = action.limitationKeys.map((key) => limitationDescriptions[key]);
   if (repository.mode === "demo") limitations.push("当前使用虚构演示数据，推荐结果只用于体验流程。 ".trim());
   if (repository.mode === "statsbomb") limitations.push("历史赛事阵容样本不能证明球队当前完整阵容；事件数据也不覆盖身体属性、潜力或合同信息。");
+  if (repository.mode === "fbref") limitations.push("FBref 当前仅覆盖五大联赛页面中有表现记录的球员，不是完整注册名单或完整转会市场；年龄按出生日期和抓取日期计算。字段以当前页面实际可用列为准，缺失指标不按零值处理；位置未知及没有单一球队归属的记录不会进入候选筛选。该来源不提供可靠的身价、合同、预算、伤病史或转会意愿；本版通过低频读取公开统计页获取数据，页面访问受限或结构变更时需等待或调整数据源。 ".trim());
+  if (repository.mode === "fbref" && eligibleEvaluatedPlayers.some(({ player }) => player.source.includes("统计页未读取"))) {
+    limitations.push("本次有一个或多个补充统计页未能读取；只使用了来源成功返回的字段，缺失指标没有按零值处理。 ");
+  }
+  if (state.sourceAccessFailure) {
+    limitations.push(`FBref 数据源访问失败（${state.sourceAccessFailure.code}）：${state.sourceAccessFailure.message}`);
+  }
   if (repository.mode === "sportmonks") limitations.push("当前只使用服务端配置且套餐可访问的 Sportmonks 赛季；本版不提供市场估值、GPS/追踪数据或外部球探报告，也未将球员合同字段纳入结论。");
   if (repository.mode === "skillcorner") limitations.push("当前只覆盖 SkillCorner Open Data 的 2024/25 澳大利亚 A-League 样例；它不是现役阵容或完整引援市场。来源的位置组较宽（如 Full Back），不能据此识别左/右脚或左右边后卫。数据只保留来源指标与样本口径，未验证的派生能力不计分。");
-  if (repository.mode === "wyscout") limitations.push("当前 Wyscout 数据只覆盖 2017/18 历史顶级联赛样本，不是现役球员池；球队与年龄均按历史赛季解释，不能用于当前效力、年龄或转会可行性判断。来源事件映射进球（射门事件 + 标签 101）、助攻（标签 301）、传球（传球事件 + 成功标签 1801）和关键传球（旧版标签 302）；关键传球不等于射门助攻，射门助攻保持不可用。另有 TactiScout 根据起终点 x 坐标、105 米标准场地长度假设及 Wyscout 渐进传球阈值推算的渐进传球次数和成功率；这不是来源原生字段，缺少坐标或成功/失败标签时不提供。地面防守对抗按独立子事件统计，明确胜出占比以标签 703 为分子、701/702/703 为完整分母；702 中性结果也包含在内，该标签属于简化分类，不等于抢断成功或标准对抗胜率。分钟按首发阵容与换人分钟估算为 90 分钟制，不含补时，也未校正红牌等特殊情况；每 90 分钟结果是近似值。施压、渐进带球、身体能力等未映射指标保持不可用。数据源为 Pappalardo 等人 2019 年数据集（CC BY 4.0）。");
+  if (repository.mode === "wyscout" || repository.mode === "curated") {
+    const sourceDescription = repository.mode === "curated"
+      ? "当前 TactiScout 自建快照基于 Wyscout 2017/18 历史顶级联赛样本"
+      : "当前 Wyscout 数据只覆盖 2017/18 历史顶级联赛样本";
+    limitations.push(`${sourceDescription}，不是现役球员池；球队与年龄均按历史赛季解释，不能用于当前效力、年龄或转会可行性判断。来源事件映射进球（射门事件 + 标签 101）、助攻（标签 301）、传球（传球事件 + 成功标签 1801）和关键传球（旧版标签 302）；关键传球不等于射门助攻，射门助攻保持不可用。另有 TactiScout 根据起终点 x 坐标、105 米标准场地长度假设及 Wyscout 渐进传球阈值推算的渐进传球次数和成功率；这不是来源原生字段，缺少坐标或成功/失败标签时不提供。地面防守对抗按独立子事件统计，明确胜出占比以标签 703 为分子、701/702/703 为完整分母；702 中性结果也包含在内，该标签属于简化分类，不等于抢断成功或标准对抗胜率。分钟按首发阵容与换人分钟估算为 90 分钟制，不含补时，也未校正红牌等特殊情况；每 90 分钟结果是近似值。施压、渐进带球、身体能力等未映射指标保持不可用。数据源为 Pappalardo 等人 2019 年数据集（CC BY 4.0）。`);
+  }
   if (state.confirmedPosition && state.confirmedPositionSearchMatchCount === 0) {
     limitations.push(`本轮按用户确认的位置（${positionLabels[state.confirmedPosition]}）完成候选检索后，没有找到符合当前筛选条件的球员；没有放宽位置范围。`);
   } else if (state.confirmedPosition && state.confirmedPositionSearchMatchCount === null && !discoveredPlayersForConstraint(state).length) {
@@ -912,6 +929,7 @@ export function createRecruitmentConversation(input: {
         hasSearchedPlayerReports: false,
         methodologySearchFailed: false,
         playerReportSearchFailed: false,
+        sourceAccessFailure: null,
         confirmedPositionNoMatchQuestionAsked: false,
         confirmedPositionNoMatchDeclined: false,
         policyBlocked: false,
@@ -929,6 +947,23 @@ export function createRecruitmentConversation(input: {
         message: state.decisionSteps === 0 ? "正在整理需求并规划调查步骤" : "正在根据已收集的信息规划下一步调查",
         completedSteps: state.decisionSteps,
       });
+      if (state.sourceAccessFailure) {
+        const action = FinishActionSchema.parse({
+          ...emptyDecision(state.targetTeam),
+          needSummary: "FBref 当前统计页访问被拒绝，本轮无法生成候选名单。",
+        });
+        const responseMessage = `FBref 的数据请求被拒绝（${state.sourceAccessFailure.code === "blocked" ? "HTTP 403" : "HTTP 429"}）。本轮无法读取球员数据；这不代表没有符合条件的球员。`;
+        observer?.({ phase: "decision", action: "finish", elapsedMs: 0, ok: true, policyBlocked: false, targetTeam: state.targetTeam ?? undefined });
+        return {
+          action,
+          responseMessage,
+          decisionSteps: state.decisionSteps + 1,
+          pendingQuestion: null,
+          policyBlocked: false,
+          policyBlockedRepeatCount: 0,
+          history: [{ role: "assistant" as const, content: JSON.stringify(action) }],
+        };
+      }
       if (state.confirmedPosition && state.confirmedPositionSearchMatchCount === 0) {
         if (state.confirmedPositionNoMatchDeclined || declinedPositionBroadening(state.history)) {
           const action = emptyPositionConclusion(state.targetTeam, state.confirmedPosition);
@@ -1386,6 +1421,9 @@ export function createRecruitmentConversation(input: {
           hasInvestigated: true,
           ...(action.action === "search_methodology" ? { hasSearchedMethodology: true, methodologySearchFailed: true } : {}),
           ...(action.action === "search_player_reports" ? { hasSearchedPlayerReports: true, playerReportSearchFailed: true } : {}),
+          ...(repository.mode === "fbref" && (code === "blocked" || code === "rate_limit")
+            ? { sourceAccessFailure: { code, message } }
+            : {}),
           history: [{ role: "tool" as const, toolName: action.action, content: JSON.stringify({
             error: message,
             ...(code ? { errorCode: code } : {}),
@@ -1581,9 +1619,11 @@ export function createRecruitmentConversation(input: {
         datasetMode: repository.mode,
         datasetScope: state.datasetScope ?? describeDatasetScope(repository.mode),
       });
-      const responseMessage = recommendations.length
-        ? "已完成一轮调查。名单顺序表示 Agent 建议优先继续考察的顺序，不是经过验证的综合能力排名。"
-        : "已完成一轮调查，但当前证据不足以支持具体候选推荐。";
+      const responseMessage = state.sourceAccessFailure
+        ? `FBref 的数据请求被拒绝（${state.sourceAccessFailure.code === "blocked" ? "HTTP 403" : "HTTP 429"}）。本轮无法读取球员数据；这不代表没有符合条件的球员。`
+        : recommendations.length
+          ? "已完成一轮调查。名单顺序表示 Agent 建议优先继续考察的顺序，不是经过验证的综合能力排名。"
+          : "已完成一轮调查，但当前证据不足以支持具体候选推荐。";
       return { report, responseMessage, pendingQuestion: null };
     })
     .addEdge(START, "record_user_turn")

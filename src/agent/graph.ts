@@ -66,6 +66,7 @@ function buildCaveats(requirements: Requirements, repo: PlayerRepository): strin
     "机会创造使用射门助攻和助攻次数作为粗略代理；未评估机会质量或传球难度。",
     "施压、抢断与拦截反映动作次数，不代表成功率或所在战术位置。",
     ...(repo.mode === "statsbomb" ? ["球员位置取 StatsBomb 阵容记录中的主要位置，跨位置球员可能被简化归类。"] : []),
+    ...(repo.mode === "fbref" ? ["FBref 当前页仅提供赛季表现记录，不是完整注册名单；只引用本轮实际可用字段，宽泛位置不推断成具体职责；位置未知或没有单一球队归属的记录不会进入候选筛选。"] : []),
     ...(repo.mode === "sportmonks" ? [
       "Sportmonks 只查询服务端配置的当前赛季和该 provider 的球队名单；未取得订阅覆盖的联赛不会出现在候选池中。",
       "Sportmonks 统计不含 GPS/追踪数据；本版不映射带球次数、施压或射门助攻，未覆盖的指标不会按零值评分。",

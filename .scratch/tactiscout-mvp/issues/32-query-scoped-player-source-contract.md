@@ -46,6 +46,7 @@ Labels: ready-for-agent
 - 2026-10-04：新增 `PlayerEloClient` 只读底座：支持按姓名/联赛分页、按来源 ID 读取档案与评分历史；请求带超时并区分鉴权、限流、网络和响应错误，不缓存、不落盘，也不暴露 transfer-fit、prospect-score 或 market-value endpoint。模型处理与报告展示权限都未显式确认时构造失败。此 client 尚未接入 Agent；当前 LangGraph 工作流仍通过 `loadPlayers()` 全量加载，因此在线接入前仍须完成本 issue 的按需查询契约。
 - 2026-10-04：对话图已改用 `searchCandidates`、`inspectTeam`、`getPlayersByIds` 和 `getComparisonPlayers` 四个按需入口；`loadPlayers` 可选，只有离线兼容适配器才以它作为默认实现。候选页校验来源实际执行的筛选、精确/未知总数、ID 唯一性和连续游标；来源失败不填成零匹配。调查范围累计真实读取记录的身份、赛事和赛季摘要，不把完整球员档案复制到 checkpoint。TypeScript build 通过；没有运行测试。PlayerElo 尚未接入，真实授权、key 和 smoke 仍未完成。
 - 2026-10-04：PlayerElo 已接入为可选 LangGraph 报告节点：仅在证据审查通过后，对最终推荐候选按姓名查询；只有分页结果未满 100 条且规范化姓名唯一时才附加 Elo/EAR 标签。外部信号在结构、报告卡片和覆盖状态中独立呈现，不进入 Agent prompt、能力证据、排序或评分；默认因缺 API key/展示许可/本地保留许可而关闭。客户端不做缓存，但启用后应用会将报告状态保存在本机 LangGraph checkpoint 与浏览器 localStorage，因此有单独保留许可门控。前后端 build 通过；没有运行测试，也未配置 key 或调用真实 API，展示权、保留权和 smoke 仍待确认。
+- 2026-10-04：重新查看 [PlayerElo 官方 API access](https://playerelo.football/api-access) 与[接口文档](https://playerelo.football/docs)：官网当前仍列免费档 €0、500 次/月、每分钟 10 次、evaluation/hobby 用途，且所有 endpoint 需要 Bearer key；页面的 key/subscription 入口当前显示 “Temporarily unavailable”。因此它暂时不能作为无需用户凭据的 live 验证路径，也不适合替代 FBref 成为主候选源；保留现有可选 report-only adapter，等 free-key 入口恢复后再联调。
 
 ## Answer
 

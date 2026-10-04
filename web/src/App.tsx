@@ -292,7 +292,7 @@ function App() {
           <span>TactiScout</span>
         </a>
         <div className="topbar-meta">
-          <span className={`source-pill ${dataset?.mode === "sportmonks" ? "source-pill-live" : ""}`}><span className="status-dot" />{datasetLabel}</span>
+          <span className={`source-pill ${dataset?.mode === "sportmonks" || dataset?.mode === "fbref" ? "source-pill-live" : ""}`}><span className="status-dot" />{datasetLabel}</span>
           <button type="button" className="text-button observations-open-button" onClick={() => setPlayerObservationsOpen(true)}>球探观察</button>
           <span className="topbar-caption">对话式球探工作台 <span>·</span> MVP</span>
         </div>
@@ -390,7 +390,7 @@ function App() {
           </section>
 
           <section className="report-panel" aria-live="polite">
-            {report ? <RecruitmentReportView report={report} reportedAt={reportAt} isWaiting={waitingForAnswer} /> : <EmptyReport dataset={dataset} datasetLabel={datasetLabel} />}
+            {report ? <RecruitmentReportView report={report} reportedAt={reportAt} isWaiting={waitingForAnswer} snapshot={dataset?.snapshot ?? null} /> : <EmptyReport dataset={dataset} datasetLabel={datasetLabel} />}
           </section>
         </div>
       </main>
@@ -431,13 +431,17 @@ function EmptyReport({ dataset, datasetLabel }: { dataset: DatasetStatus | null;
       <h2>先说说你要解决的<br /><em>阵容问题。</em></h2>
       <p>球探会围绕可观察的比赛表现建立能力画像，比较候选人的数据、样本和风险，不会用未经验证的总分替代判断。</p>
       <div className="empty-data-note"><span className="status-dot" />当前数据来源：{datasetLabel}</div>
-      <DatasetScopeCard scope={dataset ? describeDatasetScope(dataset.mode) : null} showCoverageState={false} />
+      <DatasetScopeCard
+        scope={dataset ? describeDatasetScope(dataset.mode, undefined, dataset.snapshot) : null}
+        showCoverageState={false}
+        snapshot={dataset?.snapshot}
+      />
       <div className="empty-index"><span>INVESTIGATE</span><i /><span>COMPARE</span><i /><span>EXPLAIN</span></div>
     </div>
   );
 }
 
-function RecruitmentReportView({ report, reportedAt, isWaiting }: { report: RecruitmentReport; reportedAt: string | null; isWaiting: boolean }) {
+function RecruitmentReportView({ report, reportedAt, isWaiting, snapshot }: { report: RecruitmentReport; reportedAt: string | null; isWaiting: boolean; snapshot: DatasetStatus["snapshot"] }) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   useEffect(() => setSelectedIds([]), [report]);
   const selectedRecommendations = report.recommendations.filter((item) => selectedIds.includes(item.player.playerId));
@@ -455,7 +459,7 @@ function RecruitmentReportView({ report, reportedAt, isWaiting }: { report: Recr
       {isWaiting && <p className="snapshot-warning">正在等待补充信息。下方保留最近一次完整报告，后续调查完成后会更新。</p>}
       <section className="need-summary"><span className="report-section-label">需求理解</span><p>{report.needSummary}</p></section>
       {report.capabilityProfile.length > 0 && <section className="capability-profile"><span className="report-section-label">目标能力画像 · Agent 根据需求推导，可继续修正</span><ul>{report.capabilityProfile.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul></section>}
-      <DatasetScopeCard scope={report.datasetScope ?? describeDatasetScope(report.datasetMode)} showCoverageState />
+      <DatasetScopeCard scope={report.datasetScope ?? describeDatasetScope(report.datasetMode)} showCoverageState snapshot={snapshot} />
       {report.searchScopes.length > 0 && <section className="search-scope"><span className="report-section-label">候选检索范围</span><p>以下是 Agent 实际使用的条件；可继续在对话中补充或纠正。</p><ul>{report.searchScopes.map((scope, index) => <li key={`${scope.source}-${index}`}><strong>{scope.source === "user_confirmed" ? "用户确认" : scope.source === "mixed" ? "包含用户确认条件" : "Agent 根据对话解释"}</strong>{" · "}{[
         scope.position ? `位置 ${scope.position}` : null,
         scope.maxAge !== null ? `${scope.maxAge} 岁及以下` : null,
@@ -479,20 +483,59 @@ function RecruitmentReportView({ report, reportedAt, isWaiting }: { report: Recr
   );
 }
 
-function DatasetScopeCard({ scope, showCoverageState }: { scope: RecruitmentReport["datasetScope"] | null; showCoverageState: boolean }) {
+function DatasetScopeCard({ scope, showCoverageState, snapshot }: { scope: RecruitmentReport["datasetScope"] | null; showCoverageState: boolean; snapshot?: DatasetStatus["snapshot"] }) {
   if (!scope) {
     return <section className="dataset-scope-card dataset-scope-unavailable" aria-label="数据范围说明"><span className="report-section-label">数据范围</span><p>当前数据来源说明暂时不可用。</p></section>;
   }
+  const matchingSnapshot = scope.datasetId === snapshot?.datasetId ? snapshot : undefined;
   return (
     <section className={`dataset-scope-card dataset-scope-${scope.kind}`} aria-label="数据范围说明">
       <div className="dataset-scope-heading"><span className="report-section-label">数据范围</span><strong>{scope.title}</strong></div>
       <p>{scope.summary}</p>
-      {scope.observedCoverage && <p className="dataset-scope-observed">本次读取 {scope.observedCoverage.playerRecordCount.toLocaleString()} 条球员记录 · 赛事 {scope.observedCoverage.competitions.join("、") || "未知"} · 赛季 {scope.observedCoverage.seasons.join("、") || "未知"}</p>}
+      {scope.datasetId && <p className="dataset-scope-observed">使用数据集版本 <code className="dataset-version" aria-label={`完整版本号 ${scope.datasetId}`} title={scope.datasetId}>{shortDatasetId(scope.datasetId)}</code>{scope.datasetBuiltAt ? ` · 构建于 ${formatDate(scope.datasetBuiltAt)}` : ""}</p>}
+      {scope.observedCoverage && <p className="dataset-scope-observed">本次读取 {scope.observedCoverage.playerRecordCount.toLocaleString()} 条球员记录 · 赛事 {scope.observedCoverage.competitions.map(datasetCompetitionLabel).join("、") || "未知"} · 赛季 {scope.observedCoverage.seasons.join("、") || "未知"}</p>}
+      {matchingSnapshot && <details><summary>查看数据集完整覆盖</summary>
+        <p>{matchingSnapshot.playerSeasonRecords.toLocaleString()} 条球员赛季记录 · {matchingSnapshot.uniquePlayers.toLocaleString()} 名不同球员 · {matchingSnapshot.teams.toLocaleString()} 支球队 · {matchingSnapshot.matches.toLocaleString()} 场比赛</p>
+        <p>赛事：{matchingSnapshot.competitions.map(datasetCompetitionLabel).join("、")} · 赛季：{matchingSnapshot.seasons.join("、")}</p>
+        <ul className="dataset-metric-coverage">{matchingSnapshot.metrics.map((metric) => <li key={metric.key}>{datasetMetricLabel(metric.key)}：{metric.availableRecords.toLocaleString()} / {metric.totalRecords.toLocaleString()} 条 · {Math.round(metric.coverageRatio * 100)}% 可用</li>)}</ul>
+      </details>}
       {!scope.observedCoverage && showCoverageState && <p className="dataset-scope-observed">本次数据池覆盖范围未知；具体候选范围需依据已核实的赛事、赛季和球员来源确认。</p>}
       {!scope.observedCoverage && !showCoverageState && <p className="dataset-scope-observed">开始调查后，报告会记录本次实际读取到的赛事、赛季和球员记录数。</p>}
       <details><summary>这份数据的限制</summary><ul>{scope.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul></details>
     </section>
   );
+}
+
+function datasetMetricLabel(key: string): string {
+  const labels: Record<string, string> = {
+    goals: "进球",
+    assists: "助攻",
+    keyPasses: "关键传球",
+    passesAttempted: "传球尝试",
+    passesCompleted: "成功传球",
+    wyscoutAccurateProgressivePassesPct: "渐进传球成功率",
+    wyscoutClearlyWonGroundDefensiveDuelPct: "明确胜出地面防守对抗占比",
+    wyscoutGroundDefensiveDuelsPer90: "地面防守对抗 / 90 分钟",
+    wyscoutProgressivePassesPer90: "渐进传球 / 90 分钟",
+  };
+  return labels[key] ?? key;
+}
+
+function datasetCompetitionLabel(name: string): string {
+  const labels: Record<string, string> = {
+    "English first division": "英超",
+    "French first division": "法甲",
+    "German first division": "德甲",
+    "Italian first division": "意甲",
+    "Spanish first division": "西甲",
+  };
+  return labels[name] ?? name;
+}
+
+function shortDatasetId(datasetId: string): string {
+  const digest = datasetId.match(/-([a-f\d]{12})-/i)?.[1];
+  const version = datasetId.match(/-v(\d+)-/i)?.[1];
+  return version && digest ? `v${version} · ${digest}` : datasetId;
 }
 
 function CompareRecommendations({ recommendations, onClear }: { recommendations: RecruitmentReport["recommendations"]; onClear: () => void }) {
@@ -534,7 +577,7 @@ function RecommendationCard({ recommendation, rank, selected, selectionDisabled,
     <article className="recommendation-card">
       <div className="recommendation-card-heading"><span className="candidate-rank">{String(rank).padStart(2, "0")}</span><div className="candidate-title"><h3>{player.name}</h3><span>{player.team} <i>·</i> {player.competition} {player.season}</span></div></div>
       <div className="candidate-meta"><span>{player.position}</span><span>{player.age === null ? "年龄未知" : `${player.age} 岁`}</span><span>{player.minutes.toLocaleString()} 分钟</span></div>
-      <p className="player-provenance">数据来源：{player.source}{player.sourceIdentity?.retrievedAt ? ` · 抓取于 ${formatDate(player.sourceIdentity.retrievedAt)}` : ""}</p>
+      <p className="player-provenance">数据来源：{player.source}{player.sourceIdentity?.retrievedAt ? ` · 抓取于 ${formatDate(player.sourceIdentity.retrievedAt)}` : ""}{player.sourceUrl && <> · <a href={player.sourceUrl} target="_blank" rel="noreferrer">查看来源页</a></>}</p>
       <label className="compare-select"><input type="checkbox" checked={selected} disabled={selectionDisabled} onChange={onToggle} /><span>加入比较</span></label>
       <p className="recommendation-rationale">{recommendation.rationale}</p>
       <div className="evidence-columns">

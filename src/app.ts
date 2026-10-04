@@ -93,10 +93,14 @@ export function createApp(options: {
   if (checkpointStore) app.addHook("onClose", async () => checkpointStore.close());
 
   app.get("/health", async () => ({ status: "ok", service: "tactiscout-api" }));
-  app.get("/api/v1/dataset", async () => DatasetStatusSchema.parse({
-    mode: playerRepository.mode,
-    source: playerRepository.sourceName,
-  }));
+  app.get("/api/v1/dataset", async () => {
+    const snapshot = await playerRepository.getDatasetStatus?.();
+    return DatasetStatusSchema.parse({
+      mode: playerRepository.mode,
+      source: playerRepository.sourceName,
+      ...(snapshot ? { snapshot } : {}),
+    });
+  });
   app.get("/api/v1/knowledge/status", async () => KnowledgeStatusSchema.parse(await knowledgeBase.status()));
   app.get("/api/v1/player-observations", async () => PlayerObservationListSchema.parse(await playerObservationLibrary.list()));
 

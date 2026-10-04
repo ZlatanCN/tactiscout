@@ -18,6 +18,8 @@
     "knowledge:crawl": "tsx src/knowledge/cli.ts crawl",
     "knowledge:purge-source": "tsx src/knowledge/cli.ts purge-source",
     "identity:reep": "tsx src/identity/cli.ts",
+    "dataset:build": "node --import tsx src/dataset/build-cli.ts",
+    "dataset:refresh": "node --import tsx src/dataset/refresh-cli.ts",
     "start": "node dist/index.js"
   },
   "dependencies": {

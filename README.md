@@ -31,7 +31,7 @@ TactiScout 是一个 TypeScript 足球球探研究原型。用户用一句自然
 - Fastify：对话案件 HTTP 接口与共享 Zod 请求/响应契约。
 - LangGraph `StateGraph`：共享案件状态、模型决策与数据工具循环、条件路由、`interrupt` 人机交互、证据审核与 checkpoint。外层案件步骤由图控制，阶段内由模型按工具结果决定继续调查、补查、追问或结束。
 - `@langchain/openai`：服务端调用兼容 OpenAI 的模型；密钥不会发送到浏览器。
-- StatsBomb Open Data、本地虚构演示数据，以及可选的 Sportmonks、SkillCorner 和 Wyscout 球员数据 adapter。
+- 数据产品主线是 TactiScout 自建、版本化的球探证据集：对有出处的数据确定性地计算自有指标，复用第一方观察记录补充比赛情境；报告保留上游来源、样本与限制。数据适配器只是采集入口。首版边界和后续构建以 [issue 40](.scratch/tactiscout-mvp/issues/40-tactiscout-owned-scouting-dataset.md) 为准。
 - LanceDB 本地索引、许可登记门控和 Transformers.js multilingual E5 q8 本地 embedding。第一次执行 RAG 检索时会下载量化模型权重并缓存。也可显式切换到兼容 OpenAI 的 embedding 服务；切换前要考虑文档会发送给该服务处理。
 
 招募案件的 LangGraph checkpoint 默认保存在本地 SQLite 文件 `.data/recruitment-cases.sqlite`；可用 `TACTISCOUT_CHECKPOINT_PATH` 改位置。API 进程重启后，已暂停案件可通过原 `caseId` 恢复。浏览器中的对话记录和招募计划/报告快照仍由 `localStorage` 保存；浏览器数据与服务端图执行状态是两类独立数据。同一个案件在单个 API 进程内串行处理，不同案件可以并行。当前 SQLite saver 与进程内互斥适用于本机单进程原型；多进程部署需要共享 checkpoint 后端和跨进程互斥方案。
@@ -55,13 +55,28 @@ pnpm dev
 pnpm dev:web
 ```
 
-打开 Vite 输出的本地地址开始对话。未配置模型时，对话接口会明确返回 `503`，不会回退成机械筛选并伪称 Agent 正常工作。
+网页固定使用 `http://127.0.0.1:5173/`；如果该端口已被占用，启动会明确失败，不会悄悄换到另一个可能陈旧的预览地址。未配置模型时，对话接口会明确返回 `503`，不会回退成机械筛选并伪称 Agent 正常工作。
 
 API 默认只绑定 `127.0.0.1`，并拒绝非本机 `Host`、非本机网页 `Origin` 和浏览器标记的跨站请求。开发网页通过 Vite 同源代理访问 API；API 不启用反射式 CORS。
 
 ## 数据来源
 
-默认使用虚构演示数据，界面会显示数据来源。接入 StatsBomb Open Data 时，先准备本地数据集，并在 `.env` 设置：
+数据路线是自建可追溯的数据产品：TactiScout 负责数据导入/采集、规范化、指标计算、版本和质量报告，保留底层来源及许可。第一方观察用于补充战术语境，不要求用户手工录完整球员库；观察档位只表示单场主观判断，不包装成统计能力分。首版固定有限的比赛范围和字段覆盖，不声称完整或实时转会市场。
+
+工作台已有“球探观察”入口，可记录比赛中的球队、位置/职责、能力维度、观察者 1–5 档判断和具体依据。观察数据独立于统计快照保存，只在获得授权后进入 Agent/RAG 检索。
+
+仓库提供 `pnpm dataset:refresh`，从 Figshare API 获取固定版本的 Wyscout 开放数据，核对 CC BY 4.0 元数据、文件大小与 MD5，再对本地原始文件计算 SHA-256 并构建快照。`pnpm dataset:build` 仍可在已有原始文件上离线重建。当前数据覆盖 2017/18 五大联赛 1,826 场比赛、98 支球队、2,561 名球员；它不是现役候选池。原始数据与 TactiScout 快照都留在 Git 忽略的 `.data/`，不随代码提交。
+
+当前本机 `.env` 仍可将 `TACTISCOUT_DATA_MODE` 设为 `curated`，读取历史快照并运行现有链路；处理该来源前需显式确认 `TACTISCOUT_WYSCOUT_AI_PROCESSING_ALLOWED=true`。Agent 和最终报告会说明快照赛季、指标口径与来源，并禁止将历史球队/年龄/表现说成当前事实。要支持当前球员推荐，仍需取得一份更近赛季、覆盖足够且许可允许项目用途的公开数据；在此之前，产品只提供历史表现分析。
+
+不把对球探网站批量抓取当成默认路线；来源必须支持项目所需的获取、保存、计算和模型处理用途。当前没有免费、许可清楚、最新、覆盖主要联赛且含细粒度能力指标的单一来源。StatsBomb 2023/24 德甲开放样本只有 34 场，适合特定案例分析，不足以作为完整联赛候选池。完整路线和候选数据集调查见 [issue 40](.scratch/tactiscout-mvp/issues/40-tactiscout-owned-scouting-dataset.md) 与[自建数据集调查](.scratch/tactiscout-mvp/research/self-built-scouting-dataset-feasibility-2026-10.md)。
+
+第一方观察使用[单场采集规程](docs/scouting/first-party-observation-protocol.md)：建议先用单一赛事/赛季的 6 名中锋做 12 条球员—比赛样本，并对 3 条样本进行独立双人记录。工作台显示记录数、比赛上下文完整度和能力维度覆盖；小样本只用于案例比较，不代表球员市场或评分信度。
+
+<details>
+<summary>展开：已有历史与实验数据适配器的配置参考</summary>
+
+接入 StatsBomb Open Data 的历史样本实验时，先准备本地数据集，并在 `.env` 设置：
 
 ```env
 TACTISCOUT_DATA_MODE=statsbomb
@@ -74,6 +89,10 @@ TACTISCOUT_STATSBOMB_AI_PROCESSING_ALLOWED=false
 赛事和赛季 ID 只是格式示例，请根据数据集文件选择。StatsBomb Open Data 覆盖部分赛事/赛季，不是完整职业球员数据库，也不能核实当前完整阵容、合同、预算、潜力或身体属性。使用前先在 StatsBomb Resource Centre 注册并阅读[官方数据使用协议](https://github.com/hudl/open-data/blob/master/LICENSE.pdf)。协议没有明确授权云端 LLM 处理；默认设置会阻止 Agent 使用 StatsBomb。只有在确认协议适用于你的用法、明确开启 `TACTISCOUT_STATSBOMB_AI_PROCESSING_ALLOWED=true`，并把 `OPENAI_BASE_URL` 配置为 `localhost`、`127.0.0.0/8` 或 `::1` 等本机回环地址后，Agent 才会处理这些数据。不得将原始事件数据提供给第三方或随项目分发。公开、分享或分发基于数据的分析时，须标明 StatsBomb 来源并使用[官方 Media Pack logo](https://statsbomb.com/media-pack/)；商业用途不在该原型许可范围内。[官方 Open Data README](https://github.com/hudl/open-data)。
 
 StatsBomb 适配器只在比赛事件和阵容覆盖完整、球员射门能对应到该场阵容、且分钟区间顺序连续时生成非点球 xG 证据：每 90 分钟非点球 xG，以及每次非点球射门的平均 xG。它聚合 `shot.statsbomb_xg`，排除点球和点球大战；缺少射门类型或有效 xG 时不生成该球员的 xG 证据，不把缺失值补成 0。阵容末段标记为 `Final Whistle` 但结束时间为空时，适配器用该场非点球大战时段的最后事件时间补足；缺少、空白或不完整的阵容会使对应赛事/赛季范围的 xG 证据不可用，缺少球员阵容记录或分钟区间逆序、重叠、不连续时则不发布该球员的 xG 证据。报告保留赛事/赛季、来源字段、出场分钟、样本场次和非点球射门数。这些是 StatsBomb 单次射门 xG 的 TactiScout 聚合统计，不等于终结能力评分或未来表现预测；它们不会自动进入职责评分。[StatsBomb xG 定义](https://statsbomb.com/soccer-metrics/expected-goals-xg-explained/) · [官方数据 schema](https://github.com/hudl/open-data/tree/master/doc)。
+
+FBref adapter 是一个本地实验实现，不属于 TactiScout 自建数据集主线。Fastify 服务端会先读取五大联赛标准球员页，再串行读取传球、防守和持球页；每个请求至少间隔 1 秒。完整快照在单个 API 进程内缓存 24 小时，可用 `TACTISCOUT_FBREF_CACHE_TTL_MS` 调整；不会定时抓取。抓取器使用表格 `data-stat` 列名映射字段，保留 FBref 球员/球队/赛事 ID、球员来源链接和抓取时间。它不将球员跨俱乐部记录按姓名合并；页面没提供或抓取不到的指标保持不可用。任一页面遇到 403 或 429 时都会停止剩余读取，并在进程内冷却 24 小时，不重试也不绕过访问检查。
+
+FBref 不是官方 API，也不是完整现役注册名单或完整转会市场；当前列表仅表示页面有表现记录的球员。年龄按出生日期及抓取日计算，位置只有来源提供的宽泛组别；位置未知和没有单一球队归属的记录不会进入候选筛选。FBref 的高级足球数据已在 2026 年缩减，不能假设 xG、推进或压迫指标持续存在。[当前 Big 5 标准统计](https://fbref.com/en/comps/Big5/stats/players/Big-5-European-Leagues-Stats) · [FBref 2026 数据更新公告](https://www.sports-reference.com/blog/2026/01/fbref-stathead-data-update/)。Sports Reference 当前使用条款也明确写有对将其内容用于 AI prompting 的限制；非商业用途并不自动豁免。当前接入是用户选择的本地作品集原型实现，不应被描述为获得了站点授权；在公开部署或扩大自动访问前需取得适用许可或更换数据源。[使用条款](https://www.sports-reference.com/termsofuse.html)。
 
 Sportmonks 是另一个可选 provider。其当前赛季模式从配置赛季逐页读取球队，再读取各队当前名单和该赛季表现。配置前须确认账户套餐包含目标联赛。**2026-10-04 核查的公开套餐页**列出 Starter：每月 €29（年付折算 €24/月），可选 5 个联赛，每实体每小时 2,000 次调用；xG 与 Pressure Index 另列为 €29/月起的附加包。页面还提供付费套餐 14 天试用；服务条款说明试用需要有效银行卡，期满前未取消会扣费。较早文档中的免费联赛覆盖信息可能已过时，应以账户当前 entitlement 为准。[套餐与定价](https://www.sportmonks.com/football-api/plans-pricing/) · [服务条款与试用](https://www.sportmonks.com/terms-of-service/)。例如：
 
@@ -124,13 +143,15 @@ pnpm identity:reep resolve-source wyscout-open-data <player-id>
 
 完成本地 Reep 索引后，可选择开启报告中的 Wyscout 历史样本：设置 `TACTISCOUT_WYSCOUT_ARCHIVE_DIR` 指向已下载的 Wyscout Open Data 目录，并在确认展示与本机报告保留范围后，将 `TACTISCOUT_WYSCOUT_HISTORICAL_REPORT_DISPLAY_ALLOWED` 和 `TACTISCOUT_WYSCOUT_HISTORICAL_LOCAL_RETENTION_ALLOWED` 都设为 `true`。该 enrichment 只在结论通过审查后运行，通过当前球员来源 ID → Reep ID → Wyscout player ID 精确关联；它不会按姓名匹配、发送给 LLM、进入能力评分或改变推荐顺序。报告逐条显示历史赛季、赛事、球队、分钟、可用统计、CC BY 4.0 署名及 Reep release/rung。未配置许可、索引或 Wyscout 文件时保持关闭或明确报告缺失；部分 bridge 覆盖会显示为部分匹配，不把无命中当成零表现。Reep 的 provider coverage 是按赛事部分覆盖，[官方覆盖表](https://www.reep.football/coverage/)不能据此推断每名候选人都有历史记录。
 
+</details>
+
 ## API
 
 `POST /api/v1/recruitment/cases/:caseId/turns` 接受 `{ "message": "..." }`，返回 `needs_input` 或 `completed`。追问回答使用同一个 `caseId`，以恢复同一 LangGraph 案件。
 
 `GET /api/v1/recruitment/cases/:caseId/progress` 返回该案件本轮最近最多 12 条实际 LangGraph 阶段事件。等待面板按时间顺序展示当前环节、已经过的环节和耗时；轮询不可用时仍显示启动状态和计时。阶段来自服务端受控文案，不暴露 prompt 或模型推理；界面不编造完成百分比或 ETA，阶段数量也不代表推荐质量。
 
-工作台和生成的报告会标出数据范围：虚构演示、历史比赛/聚合样本，或 Sportmonks 账号许可范围内的当前赛季球员池。报告还会列出本次已加载的球员记录数及实际出现的赛事/赛季；拿不到完整清单时会明确标为未知。历史数据不会被描述成现役阵容；Sportmonks 候选范围仅限服务器配置且账户已开通的赛事与赛季，真实账号覆盖尚未验证时仍需人工核对。
+工作台和生成的报告会标出实际数据范围：虚构演示、当前受限赛季记录，或独立历史比赛/聚合样本。报告还会列出本次已加载的球员记录数及实际出现的赛事/赛季；拿不到完整清单时会明确标为未知。历史数据不会被描述成现役阵容。
 
 `GET /api/v1/dataset` 返回当前数据模式；`GET /api/v1/knowledge/status` 返回本地索引与许可登记的统计；`/api/v1/player-observations` 提供第一方观察记录的本地 CRUD；`GET /health` 返回服务状态。旧版一次性 `/api/v1/scout` 和 `/api/v1/requirements/parse` 暂时保留，以兼容已有调用。
 
@@ -158,7 +179,7 @@ embedding 默认在本机运行，不需要 API 凭据。若明确选择远程�
 
 ## 球探观察记录
 
-工作台顶部的“球探观察”可创建、查看、编辑和删除第一方观察。填写球员姓名、观察日期、观察者、比赛情境、优势、待核实风险和具体场景；provider 与球员 ID 可选，但必须一起提供。外部 URL 仅作为出处链接，TactiScout 不会访问或抓取正文；不要把第三方报告全文粘贴进自录笔记。
+工作台顶部的“球探观察”可创建、查看、编辑和删除第一方观察。记录球员身份、观察日期/者、比赛、球队、位置与职责、优势、待核实风险和具体场景；provider 与球员 ID 可选，但必须一起提供。可展开“结构化能力观察”，选择项目自定义能力维度、1–5 主观档位、分钟和场景依据；这些档位不代表统计值，不会自动跨比赛平均，也不会进入职责适配分。外部 URL 仅作为出处链接，TactiScout 不会访问或抓取正文；不要把第三方报告全文粘贴进自录笔记。
 
 保存记录前必须明确同意写入本机 `.data/player-observations.json`；可用 `TACTISCOUT_PLAYER_OBSERVATIONS_PATH` 更改路径。把“允许加入 Agent 检索与模型分析”留空时，记录只保存在本机，不进入 RAG。逐条开启后，观察才会写入既有 LanceDB 球员报告语料。若模型或 embedding 配置为远程服务，观察文本可能发送给该服务。取消模型处理授权会先移除当前索引中的对应文档；取消本地保存授权会删除记录。
 

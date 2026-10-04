@@ -3,7 +3,7 @@ import { z } from "zod/v4";
 export const PositionSchema = z.enum(["GK", "DEF", "CB", "LB", "RB", "LWB", "RWB", "MID", "DM", "CM", "AM", "ATT", "LW", "RW", "ST"]);
 export type Position = z.infer<typeof PositionSchema>;
 
-export const DatasetModeSchema = z.enum(["demo", "statsbomb", "sportmonks", "skillcorner", "wyscout"]);
+export const DatasetModeSchema = z.enum(["demo", "statsbomb", "sportmonks", "skillcorner", "wyscout", "fbref", "curated"]);
 export type DatasetMode = z.infer<typeof DatasetModeSchema>;
 
 export const DatasetScopeSchema = z.object({
@@ -11,6 +11,8 @@ export const DatasetScopeSchema = z.object({
   title: z.string().min(1),
   summary: z.string().min(1),
   limitations: z.array(z.string().min(1)),
+  datasetId: z.string().min(1).optional(),
+  datasetBuiltAt: z.string().datetime().optional(),
   observedCoverage: z.object({
     playerRecordCount: z.number().int().nonnegative(),
     competitions: z.array(z.string().min(1)),
@@ -162,8 +164,12 @@ export const PlayerProfileSchema = z.object({
   competition: z.string(),
   season: z.string(),
   minutes: z.number().nonnegative(),
+  appearanceMatchCount: z.number().int().nonnegative().optional(),
+  datasetId: z.string().min(1).optional(),
+  datasetBuiltAt: z.string().datetime().optional(),
   stats: RawStatsSchema,
   sourceIdentity: PlayerDataSourceIdentitySchema.optional(),
+  sourceUrl: z.string().url().optional(),
   availableStats: z.array(RawStatKeySchema).optional(),
   supplementaryMetrics: z.array(SupplementaryPerformanceMetricSchema).optional(),
   eventDataComplete: z.boolean().optional(),
@@ -226,9 +232,29 @@ export const ScoutResponseSchema = z.object({
 });
 export type ScoutResponse = z.infer<typeof ScoutResponseSchema>;
 
+export const DatasetSnapshotStatusSchema = z.object({
+  datasetId: z.string().min(1),
+  builtAt: z.string().datetime(),
+  playerSeasonRecords: z.number().int().nonnegative(),
+  uniquePlayers: z.number().int().nonnegative(),
+  teams: z.number().int().nonnegative(),
+  matches: z.number().int().nonnegative(),
+  competitions: z.array(z.string()),
+  seasons: z.array(z.string()),
+  metrics: z.array(z.object({
+    key: z.string().min(1),
+    availableRecords: z.number().int().nonnegative(),
+    totalRecords: z.number().int().nonnegative(),
+    coverageRatio: z.number().min(0).max(1),
+    unit: z.string(),
+  })),
+});
+export type DatasetSnapshotStatus = z.infer<typeof DatasetSnapshotStatusSchema>;
+
 export const DatasetStatusSchema = z.object({
   mode: DatasetModeSchema,
   source: z.string(),
+  snapshot: DatasetSnapshotStatusSchema.nullable().optional(),
 });
 export type DatasetStatus = z.infer<typeof DatasetStatusSchema>;
 
