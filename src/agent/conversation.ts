@@ -113,6 +113,7 @@ const agentInstructions = [
   "在至少调用一个球队/候选/评估数据工具前，不得向用户提问或提交最终报告；如信息不足，先调查可用证据再决定是否提问。不能因为年龄、预算或位置未说明就开场发送问卷。只有关键角色歧义会改变候选集时才提出一个简短问题，并说明原因。用户回答后继续原案件。",
   "inspect_team 返回所选数据源中可用的阵容样本。只有 source identity 明确标记 isCurrentSeason=true 的 Sportmonks 数据才可用于描述该来源记录的当前赛季阵容；这不代表范围外的完整市场覆盖。StatsBomb Open Data 只覆盖指定赛事/赛季；演示数据是虚构的。",
   "若数据模式为 SkillCorner Open Data，球员指标来自 2024/25 澳大利亚 A-League 历史样例，不能描述为当前球员市场或欧洲联赛候选池。只引用 evaluate_candidates 工具返回的补充指标；保留原指标口径、单位、场次和来源字段，不自行把跑动/传球指标转换成评分或潜力结论。",
+  "若数据模式为 StatsBomb Open Data，球员与比赛指标只对应实际读取到的赛事/赛季历史样本。非点球 xG 指标是将 StatsBomb 每次射门的 shot.statsbomb_xg 按非点球射门和实际分钟聚合的派生统计；它表示机会数量/质量，不代表射门终结能力或未来进球。只引用 evaluate_candidates 返回且样本覆盖完整的指标；保留非点球口径、样本场次/分钟/射门数和 StatsBomb 来源，不把缺失数据说成 0。",
   "若数据模式为 Wyscout Open Data，球员、球队、年龄和统计只对应 2017/18 历史比赛样本，不是现役球员池。不要据此断言当前俱乐部、当前年龄、转会可行性或未来能力；只引用 evaluate_candidates 返回的指标。助攻标签 301、关键传球标签 302 是不同指标，关键传球不是射门助攻；当前数据不支持射门助攻。‘渐进传球（推算）’和‘渐进传球成功率（推算）’是 TactiScout 根据方向坐标、105 米场地长度假设和 Wyscout 阈值计算的估计值，不是 Wyscout 直接提供的指标；仅在坐标及成功/失败标签完整时可用。‘地面防守对抗 /90’计 Ground defending duel 子事件，‘明确胜出占比’按标签 703 计算且包含 701 明确失利和 702 中性结果；这是较简单的事件分类，不能改称通常意义的对抗胜率、抢断成功率或夺回球权次数。出场分钟由首发阵容与换人分钟估算，不含补时且未校正红牌等特殊情况。报告须保留历史范围、指标口径和 CC BY 4.0 来源。",
   "search_candidates 是发现工具，不按能力排序。默认保留所有出场样本；不要静默设置最低分钟数，除非用户明确提出样本门槛。结果按数据仓库顺序分页；如果还没有足够多样的候选，使用 nextOffset 继续搜索后再挑选评估对象。",
   "位置只能按用户明确指定的细分角色收窄。用户只说泛称‘中场’、‘后卫’、‘前锋’或‘能踢中场’时，不要自行推断成 CM、AM 等单一子位置；search_candidates.position 必须为 null，先广泛发现候选，再依据主位置和能力证据决定深入评估谁。只有用户明确说后腰、中前卫、前腰等具体角色时，才用单一位置作为硬筛选。",
@@ -729,6 +730,7 @@ async function evaluatePlayers(
         peerGroupSize: peerValues.length,
         minutes: supplementary?.sampleMinutes ?? player.minutes,
         ...(supplementary?.sampleMatches == null ? {} : { sampleMatches: supplementary.sampleMatches }),
+        ...(supplementary?.sampleAttempts == null ? {} : { sampleAttempts: supplementary.sampleAttempts }),
         ...(supplementary ? { definition: supplementary.definition } : {}),
         ...(supplementary ? { normalization: supplementary.normalization } : {}),
         competition: player.competition,
@@ -747,8 +749,9 @@ function evidenceText(item: CapabilityEvidence): string {
     ? `同位置/赛事/赛季样本 ${item.peerGroupSize} 人，无法显示百分位`
     : `同位置/赛事/赛季第 ${item.peerPercentile} 百分位（${item.peerGroupSize} 人）`;
   const sample = item.sampleMatches === undefined ? "" : `；样本 ${item.sampleMatches} 场、${Math.round(item.minutes)} 分钟`;
+  const attempts = item.sampleAttempts === undefined ? "" : `、${item.sampleAttempts} 次非点球射门`;
   const sourceField = item.sourceField ? `；来源字段 ${item.sourceField}` : "";
-  return `${item.label} ${value} ${item.unit}${sample}${sourceField}；${comparison}。`;
+  return `${item.label} ${value} ${item.unit}${sample}${attempts}${sourceField}；${comparison}。`;
 }
 
 const limitationDescriptions = {

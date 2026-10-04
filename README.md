@@ -68,9 +68,12 @@ TACTISCOUT_DATA_MODE=statsbomb
 TACTISCOUT_STATSBOMB_DIR=./data/statsbomb-open-data
 TACTISCOUT_STATSBOMB_COMPETITION_IDS=11
 TACTISCOUT_STATSBOMB_SEASON_IDS=90
+TACTISCOUT_STATSBOMB_AI_PROCESSING_ALLOWED=false
 ```
 
-赛事和赛季 ID 只是格式示例，请根据数据集文件选择。StatsBomb Open Data 覆盖部分赛事/赛季，不是完整职业球员数据库，也不能核实当前完整阵容、合同、预算、潜力或身体属性。公开研究时请遵守 [StatsBomb Open Data 使用条款](https://github.com/hudl/open-data)。
+赛事和赛季 ID 只是格式示例，请根据数据集文件选择。StatsBomb Open Data 覆盖部分赛事/赛季，不是完整职业球员数据库，也不能核实当前完整阵容、合同、预算、潜力或身体属性。使用前先在 StatsBomb Resource Centre 注册并阅读[官方数据使用协议](https://github.com/hudl/open-data/blob/master/LICENSE.pdf)。协议没有明确授权云端 LLM 处理；当前模式默认关闭，只有在确认协议适用于你的用法、且配置的模型在本机运行时，才设置 `TACTISCOUT_STATSBOMB_AI_PROCESSING_ALLOWED=true`。不得将原始事件数据提供给第三方或随项目分发。公开、分享或分发基于数据的分析时，须标明 StatsBomb 来源并使用[官方 Media Pack logo](https://statsbomb.com/media-pack/)；商业用途不在该原型许可范围内。[官方 Open Data README](https://github.com/hudl/open-data)。
+
+StatsBomb 适配器只在所有已记录出场比赛的相关射门字段完整、且阵容分钟区间可按顺序核算时生成非点球 xG 证据：每 90 分钟非点球 xG，以及每次非点球射门的平均 xG。它聚合 `shot.statsbomb_xg`，排除点球和点球大战；缺少射门类型或有效 xG 时不生成该球员的 xG 证据，不把缺失值补成 0。阵容末段标记为 `Final Whistle` 但结束时间为空时，适配器用该场非点球大战时段的最后事件时间补足；若阵容时间区间逆序或不连续，则保留其他可用数据、但不发布该球员的 xG 证据。报告保留赛事/赛季、来源字段、出场分钟、样本场次和非点球射门数。这些是 StatsBomb 单次射门 xG 的 TactiScout 聚合统计，不等于终结能力评分或未来表现预测；它们不会自动进入职责评分。[StatsBomb xG 定义](https://statsbomb.com/soccer-metrics/expected-goals-xg-explained/) · [官方数据 schema](https://github.com/hudl/open-data/tree/master/doc)。
 
 Sportmonks 是另一个可选 provider。其当前赛季模式从配置赛季逐页读取球队，再读取各队当前名单和该赛季表现。配置前须确认账户套餐包含目标联赛。**2026-10-04 核查的公开套餐页**列出 Starter：每月 €29（年付折算 €24/月），可选 5 个联赛，每实体每小时 2,000 次调用；xG 与 Pressure Index 另列为 €29/月起的附加包。页面还提供付费套餐 14 天试用；服务条款说明试用需要有效银行卡，期满前未取消会扣费。较早文档中的免费联赛覆盖信息可能已过时，应以账户当前 entitlement 为准。[套餐与定价](https://www.sportmonks.com/football-api/plans-pricing/) · [服务条款与试用](https://www.sportmonks.com/terms-of-service/)。例如：
 

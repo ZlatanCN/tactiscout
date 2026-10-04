@@ -129,10 +129,12 @@ export const SupplementaryMetricKeySchema = z.enum([
   "overlapRunsPer30Tip",
   "lineBreakPassesCompletedPer30Tip",
   "passesToRunsCompletionPct",
+  "statsbombNonPenaltyXgPer90",
+  "statsbombNonPenaltyXgPerShot",
 ]);
 export type SupplementaryMetricKey = z.infer<typeof SupplementaryMetricKeySchema>;
 
-export const SupplementaryMetricNormalizationSchema = z.enum(["per90", "per30Tip", "percentage"]);
+export const SupplementaryMetricNormalizationSchema = z.enum(["per90", "per30Tip", "percentage", "perShot"]);
 export type SupplementaryMetricNormalization = z.infer<typeof SupplementaryMetricNormalizationSchema>;
 
 export const SupplementaryPerformanceMetricSchema = z.object({
@@ -144,6 +146,7 @@ export const SupplementaryPerformanceMetricSchema = z.object({
   sourceField: z.string().min(1),
   sampleMinutes: z.number().nonnegative().nullable(),
   sampleMatches: z.number().int().nonnegative().nullable(),
+  sampleAttempts: z.number().int().nonnegative().nullable().optional(),
 });
 export type SupplementaryPerformanceMetric = z.infer<typeof SupplementaryPerformanceMetricSchema>;
 
@@ -273,6 +276,8 @@ export const SupplementaryCapabilityMetricDefinitions = [
   { key: "overlapRunsPer30Tip", label: "套边跑动", definition: "来源统计的套边无球跑动次数，按每 30 分钟球队持球时间标准化。", unit: "次/30分钟持球", normalization: "per30Tip" },
   { key: "lineBreakPassesCompletedPer30Tip", label: "完成的穿线传球", definition: "来源统计的完成穿线传球次数，按每 30 分钟球队持球时间标准化。", unit: "次/30分钟持球", normalization: "per30Tip" },
   { key: "passesToRunsCompletionPct", label: "向跑动传球成功率", definition: "来源统计的向跑动传球完成率。", unit: "%", normalization: "percentage" },
+  { key: "statsbombNonPenaltyXgPer90", label: "非点球 xG /90", definition: "StatsBomb 为每次非点球射门提供的 statsbomb_xg 之和，按样本实际出场分钟归一到每 90 分钟；排除点球和点球大战。它衡量射门机会的数量与质量，不是射门转化率或未来进球预测。", unit: "xG/90分钟", normalization: "per90" },
+  { key: "statsbombNonPenaltyXgPerShot", label: "非点球平均射门 xG", definition: "StatsBomb 非点球射门的 statsbomb_xg 平均值（非点球 xG 总和 ÷ 非点球射门数），排除点球和点球大战。表示平均机会质量，不是球员射门技术或终结能力评分。", unit: "xG/次射门", normalization: "perShot" },
 ] as const satisfies readonly { key: SupplementaryMetricKey; label: string; definition: string; unit: string; normalization: SupplementaryMetricNormalization }[];
 
 export const CapabilityEvidenceSchema = z.object({
@@ -284,6 +289,7 @@ export const CapabilityEvidenceSchema = z.object({
   peerGroupSize: z.number().int().nonnegative(),
   minutes: z.number().nonnegative(),
   sampleMatches: z.number().int().nonnegative().optional(),
+  sampleAttempts: z.number().int().nonnegative().optional(),
   competition: z.string(),
   season: z.string(),
   source: z.string(),
