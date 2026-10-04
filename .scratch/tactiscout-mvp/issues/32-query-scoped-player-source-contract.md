@@ -48,6 +48,7 @@ Labels: ready-for-agent
 - 2026-10-04：PlayerElo 已接入为可选 LangGraph 报告节点：仅在证据审查通过后，对最终推荐候选按姓名查询；只有分页结果未满 100 条且规范化姓名唯一时才附加 Elo/EAR 标签。外部信号在结构、报告卡片和覆盖状态中独立呈现，不进入 Agent prompt、能力证据、排序或评分；默认因缺 API key/展示许可/本地保留许可而关闭。客户端不做缓存，但启用后应用会将报告状态保存在本机 LangGraph checkpoint 与浏览器 localStorage，因此有单独保留许可门控。前后端 build 通过；没有运行测试，也未配置 key 或调用真实 API，展示权、保留权和 smoke 仍待确认。
 - 2026-10-04：重新查看 [PlayerElo 官方 API access](https://playerelo.football/api-access) 与[接口文档](https://playerelo.football/docs)：官网当前仍列免费档 €0、500 次/月、每分钟 10 次、evaluation/hobby 用途，且所有 endpoint 需要 Bearer key；页面的 key/subscription 入口当前显示 “Temporarily unavailable”。因此它暂时不能作为无需用户凭据的 live 验证路径，也不适合替代 FBref 成为主候选源；保留现有可选 report-only adapter，等 free-key 入口恢复后再联调。
 - 2026-10-04：修订此前姓名查询阶段记录：PlayerElo enrichment 已改为精确 `getPlayer(id)`；API-Football 来源直接用来源 ID，其他来源只有经 Reep 唯一跨来源映射后才查询，并校验响应 ID。当前没有可用 key 和展示/本机留存授权，因此 live API smoke 仍未完成。参见 [跨来源身份映射 issue 43](43-playerelo-reep-identity-mapping.md)。
+- 2026-10-04：重新核对 [PlayerElo API access](https://playerelo.football/api-access)：免费档申请入口目前显示邮箱输入框和 “Get free key”，免费额度为每月 500 次、每分钟 10 次，定位为 evaluation/hobby；官网标示 79K+ 球员、176 项赛事，所有 endpoint 都要求 Bearer key。此前记录的 “Temporarily unavailable” 已过期。工作区仍没有用户提供的 key；公开作品集展示、应用持久化和本地 Ollama 处理范围仍未从条款中确认，因此现有默认关闭的 gates 不变。
 
 ## Answer
 

@@ -10,7 +10,7 @@ Labels: wayfinder:map
 
 - 首版重点是球员能力评估与推荐，不是把自然语言转换成大量筛选字段。
 - 最新数据方向（2026-10-04）：自建指 TactiScout 自己维护采集/导入、规范化、指标计算、版本和质量报告，不要求用户手工创建完整球员库。已实现 `pnpm dataset:refresh`，可从 Figshare 固定版重新获取/校验 Wyscout 2017/18 五大联赛原始数据并构建快照；真实运行覆盖 1,826 场、2,561 名球员。它仍是历史数据而非现役池。StatsBomb 2023/24 德甲官方清单只有 34 场，且用户协议限制原始数据分发/商业使用，不作为广域候选库。第一方观察补充战术语境；FBref 不作为批量采集底座。研究见[自建数据集可行性](research/self-built-scouting-dataset-feasibility-2026-10.md)，采集规程见 [first-party-observation-protocol.md](../../docs/scouting/first-party-observation-protocol.md)，执行见 [issue 40](issues/40-tactiscout-owned-scouting-dataset.md) 与 [issue 41](issues/41-structured-first-party-observations.md)。
-- 2026-10-04 近期开放数据复核：未找到同时近期、多联赛、成年实名、含细粒度能力指标且复用范围清楚的主库。SkillCorner 2024/25 A-League 指标最贴近能力分析，但 MIT 文件没有明确界定球员 CSV 数据的许可范围，且本机尚无数据；IDSSE/DFL–Sportec 有 CC BY 4.0 的七场 2022/23 追踪与事件样本，只适合方法验证；OpenLigaDB 仅适合作为进球事实补充。完整依据见[近期开放球员表现数据复核](research/recent-open-player-performance-data-2026-10.md)。当前排名候选池仍只有 Wyscout 2017/18 历史快照。
+- 2026-10-04 近期开放数据复核：未找到同时近期、多联赛、成年实名、含细粒度能力指标且复用范围清楚的主库。SkillCorner 2024/25 A-League 指标最贴近能力分析，但 MIT 文件没有明确界定球员 CSV 数据的许可范围；IDSSE/DFL–Sportec 有 CC BY 4.0 的七场 2022/23 样本，只适合方法验证；OpenLigaDB 仅适合作为进球事实补充。新增复核确认 SoccerTrack v2 适合隔离验证空间指标，但比赛为匿名大学业余球员；FPL 数据和 Global Football Data Lake 的上游权利不适合公开复用；Metrica 匿名样本许可未明确；TheSportsDB 免费层只适合开发查询且不保证球员能力数据。详细依据见[近期开放球员表现数据复核](research/recent-open-player-performance-data-2026-10.md)和[新增开放足球数据源复核](research/open-data-tracking-and-current-repositories-2026-10.md)。当前排名候选池仍只有 Wyscout 2017/18 历史快照。
 - 全 TypeScript；当前技术栈是 React、Fastify 和 LangGraph。
 - 根目录 `CONTEXT.md` 是唯一领域词汇表；重要术语按其中定义使用。
 - [MVP 规格](spec.md) 收录用户故事、接口约定和实现决策；[球探与 Agent 流程研究](research/football-recruitment-and-agent-workflow.md)记录来源与产品推导；[数据源与抓取边界研究](research/football-data-sources-and-crawling.md)记录联网能力、授权路线与数据出处设计；[RAG 实践与足球语料调查](research/scouting-rag-practices-and-sources.md)记录检索实践和可用来源；[LangGraph Agent 与 Harness 调研](research/langgraph-agent-harness-patterns.md)对比官方开源实现与 TactiScout 架构；[许可感知的双语料 RAG 设计](issues/10-permission-aware-rag-design.md)确定产品原则。
@@ -67,6 +67,8 @@ Labels: wayfinder:map
 - [Reep 跨来源身份注册表](issues/33-reep-cross-source-identity-registry.md)：以 `(provider, namespace, external_id)` 精确映射 Reep ID；按 release redirects 解析合并 ID，撤销/隐藏 ID 不可解析为有效身份。同名不是身份凭据，映射不合并 provider 档案，也不作为表现证据。
 - [Wyscout 跨来源历史档案补充](issues/34-wyscout-cross-source-archive-enrichment.md)：采用 post-review、report-only LangGraph 节点，串接当前候选来源 ID → Reep → Wyscout ID → 本地 2017/18 表现记录；只读本地数据，不将历史记录暴露给 planner/model、当前评分或推荐顺序。报告 schema 与 UI 保留映射依据、release、来源署名、赛季/赛事/样本；Wyscout 主数据模式不会重复附加自身档案。
 
+- [TactiScout 版本化球探数据集](issues/40-tactiscout-owned-scouting-dataset.md)：已完成 Wyscout 2017/18 历史快照的固定版本刷新、来源指纹、确定性派生、质量覆盖与报告追溯。它证明了 TactiScout 自己构建数据产品的管线，不等同于最新球员市场；近季广覆盖数据的许可与能力覆盖仍未解决。
+
 - [把球探调查进度做成可读的阶段时间线](issues/30-readable-investigation-progress.md)：每轮显示实际 LangGraph 阶段事件、重复阶段次数与耗时，不把流程阶段伪装成完成比例或推荐质量。
 
 - [防止候选分页耗尽 Agent 调查预算](issues/26-wyscout-agent-cursor-regression.md)：按搜索范围维护候选游标和评估去重；最终结论采用短提示与证据压缩历史，单次模型请求有界。真实 Wyscout/Qwen 单次验证通过，未验证候选排序准确率。
@@ -117,7 +119,7 @@ Labels: wayfinder:map
 - 如何按实际可用语料整理 RAG/Agent 标注样本、阈值和候选排序的可信评估；缺少球探标注时不宣称客观排序准确率。
 - 当前来源发现只覆盖 PLOS 学术文章；通用网页搜索 provider、最终 embedding 模型和 RAG/Agent 评测阈值仍待验证。
 - FBref provider 已接入，但服务端联通确认收到标准 Big 5 页 HTTP 403，未重试或绕过访问检查；issue 36 保持 claimed，需在可访问环境中再确认 live 数据链路。FBref 对 AI prompting 的使用边界也未因非商业用途而消失。Wyscout 2017/18 公开数据只用于历史表现验证，不能填补现役候选池。
-- PlayerElo 官方列出免费 hobby 档每月 500 次调用，但所有接口要求 Bearer key；2026-10-04 官网 key/subscription 入口显示暂不可用。现有 report-only 节点仍默认关闭，等待免费 key 入口可用以及展示/本地保留范围确认；不会把它假设成无需凭据的 FBref 替代品。
+- PlayerElo 官网目前显示可申请免费 key（每月 500 次、每分钟 10 次，evaluation/hobby），所有接口要求 Bearer key；它称覆盖 79K+ 球员、176 项赛事并每日更新。[当前 API access 页面](https://playerelo.football/api-access) 已不再显示此前记录的暂不可用状态。工作区仍无用户提供的 key，作品集展示/本机持久化/本地模型处理权也未确认；report-only 节点继续默认关闭，不把它当作免费 FBref 替代品。
 - Reep 本地 crosswalk 只证明来源 ID 与 API-Football ID 的可映射比例，不证明 PlayerElo endpoint 命中。固定 release 已完成导入并用 2,561 个 Wyscout ID 验证 resolver；真实 PlayerElo 请求仍需 key 和许可确认。
 - Reep resolver 已导入 `20261003T052950Z` release，并对一个 Sportmonks ID 完成 Wyscout 本地档案 smoke。StatsBomb/SkillCorner 和真实候选池的 provider bridge 覆盖率、live Sportmonks API 联调及 snapshot 更新流程仍待验证。
 - 近期开放数据来源复核见[研究报告](research/recent-open-player-performance-data-2026-10.md)：SkillCorner 真实 CSV 的数据许可范围仍需确认；IDSSE 仅作七场历史方法基准，不扩大默认球员排名池；OpenLigaDB 不提供能力评分所需的比赛分钟和细粒度表现指标。

@@ -1,7 +1,7 @@
 # Build a versioned TactiScout scouting dataset
 
 Type: task
-Status: claimed
+Status: resolved
 Labels: ready-for-agent
 Blocked by: none
 
@@ -45,6 +45,7 @@ Blocked by: none
 - [来源特定指标 ADR](../../../docs/adr/0003-source-specific-performance-evidence.md)：不同来源的指标必须保留定义与样本，不可按字段名称自动合并。
 - [自建数据集可行性调查](../research/self-built-scouting-dataset-feasibility-2026-10.md)：说明公开事件数据、第一方观察和当前球员池各自可支持的范围。
 - [近期开放球员表现数据复核](../research/recent-open-player-performance-data-2026-10.md)：核对 SkillCorner、IDSSE、StatsBomb、Impect、OpenLigaDB 等一手来源的时效、字段、覆盖与许可边界。
+- [新增开放足球数据源复核](../research/open-data-tracking-and-current-repositories-2026-10.md)：补查 SoccerTrack、Metrica、TheSportsDB、FPL 与其他近季数据集，区分数据集许可和上游权利。
 - [第一方比赛观察采集规程](../../../docs/scouting/first-party-observation-protocol.md)：定义首个封闭试点、单场记录单位和评分边界。
 
 ## Comments
@@ -62,7 +63,11 @@ Blocked by: none
 - 2026-10-04：建立[第一方比赛观察采集规程](../../../docs/scouting/first-party-observation-protocol.md)，推荐首批以单一赛事/赛季的 6 名中锋、12 条球员—比赛样本起步，独立双人复核其中 3 条。观察工作台新增自采覆盖摘要；该摘要不按姓名推断身份，也不把档位转换成统计。
 - 2026-10-04：`curated` Agent 调查指令和结论指令现在明确声明其 Wyscout 2017/18 历史边界、来源署名及原生/派生指标区别；最终报告限制也包含相同口径。`pnpm build` 与 `git diff --check` 通过。
 - 2026-10-04：近期数据复核没有发现符合“较新、跨联赛、成年实名、细粒度能力指标、可明确复用”全部条件的免费主库。SkillCorner 2024/25 A-League 聚合指标值得优先核清数据 CSV 的许可范围，但本机无真实 CSV，MIT 文件的“Software”定义未明确覆盖数据；IDSSE/DFL–Sportec 的 CC BY 4.0 数据限 2022/23 七场，适合作为追踪/事件方法基准而非候选池；OpenLigaDB 只有射手与进球事实。详见[近期开放数据复核](../research/recent-open-player-performance-data-2026-10.md)。
+- 2026-10-04：额外核查 SoccerTrack v2、Metrica、Impect、TheSportsDB、FPL、evmax、The Viking Striker 和 Global Football Data Lake 后，仍没有找到满足广覆盖、当前赛季、实名成年职业球员和明确公开复用权的能力数据主库。SoccerTrack 适合隔离验证空间战术指标；单球员日志只适合追溯流程演示。FPL 及汇总仓库的 CC BY 标签不能替代上游 PL/API 权利；TheSportsDB 免费访问限开发用途且无能力字段保障。详见[新增开放足球数据源复核](../research/open-data-tracking-and-current-repositories-2026-10.md)。
+- 2026-10-04 更正：本 issue 较早评论提到 SkillCorner 真实 CSV 尚未下载；随后已由 issue 24 的固定版本刷新流程将三份 CSV 校验并放入 Git 忽略的 `.data/skillcorner-open-data/`。文件未提交，应用权限 gate 仍关闭。较早记录只反映当时状态。
 
 ## Answer
 
-进行中：Wyscout 历史事件数据现在可从固定 Figshare 版本重新获取、校验并构建为 TactiScout 快照；本机复建得到 2,682 条球员赛季记录、覆盖 1,826 场比赛。近期一手来源复核仍未找到符合项目目标的免费广域、当前能力数据源。下一步先确认 SkillCorner 球员 CSV 是否允许本项目本地保存、模型处理和报告展示；若无法确认，则只考虑把 IDSSE 七场 CC BY 4.0 数据作为独立方法验证基准，不并入默认球员排名。在此之前，产品只提供历史表现分析，不得将历史数据描述成最新球员池或完整市场。
+已完成本 issue 的版本化历史数据集切片：固定 Figshare 版本的 Wyscout 2017/18 开放事件文件可校验刷新、复现构建，并输出带来源、CC BY 4.0 署名、输入指纹、确定性指标定义、样本与缺失覆盖的 TactiScout 快照。本机当前快照覆盖 5 个联赛、1,826 场比赛、98 支球队、2,561 名不同球员和 2,682 条球员赛季记录；工作台和报告显示数据集版本、赛事/赛季范围、指标覆盖及局限。第一方观察仍与统计快照分层，并保留逐条本地保存与 AI/RAG 授权门控。
+
+此结果是历史表现研究数据集，不是最新现役候选池。已检查的当前/近季来源没有同时满足广泛成人职业球员覆盖、能力评估指标和清楚的公开复用范围；不得把 Wyscout 历史表现描述成当前效力或当前状态。该缺口继续由 [issue 39](39-layered-player-evidence.md)、[issue 20](20-licensed-player-provider-and-provenance.md) 与 [issue 24](24-supplementary-performance-evidence.md) 跟踪。详见[近期开放数据复核](../research/recent-open-player-performance-data-2026-10.md)和[新增开放数据源复核](../research/open-data-tracking-and-current-repositories-2026-10.md)。
