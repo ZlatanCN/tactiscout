@@ -48,6 +48,8 @@ Blocked by: none
 - 2026-10-04：首个实现切片是 issue 41：扩展现有自录观察为样本绑定的 1–5 主观能力档和具体比赛证据；不做跨来源拼接、不聚合成能力分、不替代当前候选源。
 - 2026-10-04：用户最新方向改为以自采第一方观察为产品数据主线，停止继续扩展多 provider。issue 39 保留来源准入、身份、赛季和口径边界；其“组合多种外部来源以覆盖当前候选池”的目标由 [issue 40](40-tactiscout-owned-scouting-dataset.md) 的新路线取代。详见[自建数据集可行性调查](../research/self-built-scouting-dataset-feasibility-2026-10.md)。
 - 2026-10-04：用户随后明确允许扩大数据源，恢复分层组合研究。最新[来源复核](../research/current-player-data-source-options-2026-10.md)没有找到兼具主要联赛当前覆盖、可复算战术指标、低成本和公开/模型使用边界明确的单一来源；Sportmonks 仍是现有适配器中最完整的候选池方案，PlayerElo 可在取得 key 与核实展示/保留/模型处理范围后做一联赛小样本、report-only 对照，Reep 继续作精确 ID bridge。当前环境没有 Sportmonks、PlayerElo 或 API-Football 凭据，未声称 live API 已验证。
+- 2026-10-04：为避免 PlayerElo 外部信号按姓名挂错人，完成[精确身份桥接研究](../research/playerelo-reep-exact-identity-crosswalk-2026-10.md)：现有 Reep release 对本机 Wyscout 2017/18 快照的 2,561 个球员 ID 中，2,375 个能精确映射到唯一 API-Football ID。Reep importer 当前白名单尚未收录 API-Football namespace；PlayerElo 无 key，展示/本机保留权限未确认，接入与 live coverage 仍待后续实现/核验。
+- 2026-10-04：完成 [issue 43](43-playerelo-reep-id-enrichment.md)：Reep importer 已载入 `api_football/player`，resolver 只接受有效且唯一的 ID 桥接，PlayerElo 使用 `getPlayer(id)` 并核对响应 ID。固定 Reep `20261003T052950Z` 对自建 Wyscout 快照的实现级 resolver 结果为 2,375 resolved、155 target 缺失、31 source 缺失；真实 PlayerElo API 记录覆盖和使用许可仍未验证。
 
 ## Answer
 

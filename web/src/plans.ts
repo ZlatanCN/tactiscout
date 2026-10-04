@@ -107,6 +107,8 @@ function reportFromLegacy(analysis: ScoutResponse, brief: string): RecruitmentRe
       status: "not_run",
       disabledReason: null,
       identityUnavailableCandidates: 0,
+      directIdentityCandidates: 0,
+      crosswalkIdentityCandidates: 0,
       checkedCandidates: 0,
       matchedCandidates: 0,
       failedCandidates: 0,

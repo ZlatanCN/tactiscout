@@ -5,9 +5,11 @@ export const ReepPlayerBridgeKeys = [
   { provider: "sportmonks", namespace: "player" },
   { provider: "statsbomb", namespace: "offline_player" },
   { provider: "wyscout", namespace: "player" },
+  { provider: "api_football", namespace: "player" },
 ] as const;
 
 const SourceProviderKeys = {
+  "api-football": { provider: "api_football", namespace: "player" },
   "skillcorner-open-data": { provider: "skillcorner", namespace: "player" },
   "sportmonks": { provider: "sportmonks", namespace: "player" },
   "statsbomb-open-data": { provider: "statsbomb", namespace: "offline_player" },
@@ -46,6 +48,25 @@ export interface ReepIdentityResolution {
   linkedBridges: ReepBridge[];
 }
 
+export type ReepPlayerEloResolutionStatus =
+  | "resolved"
+  | "source_not_found"
+  | "source_unavailable"
+  | "source_ambiguous"
+  | "source_inactive"
+  | "target_not_found"
+  | "target_ambiguous";
+
+export interface ReepPlayerEloResolution {
+  status: ReepPlayerEloResolutionStatus;
+  releaseStamp: string;
+  source: { provider: string; namespace: string; externalId: string };
+  reepId?: string;
+  apiFootballPlayerId?: string;
+  sourceRungs: string[];
+  apiFootballRungs: string[];
+}
+
 interface StoredBridge {
   sourceReepId: string;
   canonicalReepId: string | null;
@@ -79,6 +100,7 @@ export class ReepIdentityRegistry {
   private readonly database: DatabaseSync;
   private readonly sourceLookup!: StatementSync;
   private readonly canonicalLookup!: StatementSync;
+  private readonly targetOwnerLookup!: StatementSync;
   private closed = false;
   readonly releaseStamp: string;
 
@@ -86,6 +108,7 @@ export class ReepIdentityRegistry {
     this.database = new DatabaseSync(databasePath, { readOnly: true });
     let sourceLookup: StatementSync | undefined;
     let canonicalLookup: StatementSync | undefined;
+    let targetOwnerLookup: StatementSync | undefined;
     try {
       const result = this.database.prepare(
         "SELECT value FROM metadata WHERE key = 'release_stamp'",
@@ -109,8 +132,16 @@ export class ReepIdentityRegistry {
          WHERE canonical_reep_id = ? AND redirect_status = 'resolved'
          ORDER BY provider, namespace, external_id, rung`,
       );
+      targetOwnerLookup = this.database.prepare(
+        `SELECT DISTINCT canonical_reep_id AS canonicalReepId, upstream_status AS upstreamStatus
+         FROM bridges
+         WHERE provider = 'api_football' AND namespace = 'player' AND external_id = ?
+           AND redirect_status = 'resolved'
+         ORDER BY canonical_reep_id`,
+      );
       this.sourceLookup = sourceLookup;
       this.canonicalLookup = canonicalLookup;
+      this.targetOwnerLookup = targetOwnerLookup;
     } catch (error) {
       this.database.close();
       throw new Error(`Invalid Reep identity index at ${databasePath}.`, { cause: error });
@@ -190,9 +221,66 @@ export class ReepIdentityRegistry {
     return this.resolveExact(bridgeKey.provider, bridgeKey.namespace, externalId);
   }
 
+  resolvePlayerEloId(sourceProvider: string, externalId: string): ReepPlayerEloResolution {
+    const identity = this.resolveSourceProvider(sourceProvider, externalId);
+    const source = identity.source;
+    const unavailable = (status: ReepPlayerEloResolutionStatus): ReepPlayerEloResolution => ({
+      status,
+      releaseStamp: this.releaseStamp,
+      source,
+      sourceRungs: [],
+      apiFootballRungs: [],
+    });
+
+    if (identity.status === "not_found") return unavailable("source_not_found");
+    if (identity.status === "unsupported_provider") return unavailable("source_unavailable");
+    if (identity.status !== "resolved" || !identity.reepId) return unavailable("source_ambiguous");
+
+    const activeSourceBridges = identity.matchedBridges.filter(isCurrentUpstreamBridge);
+    if (activeSourceBridges.length === 0) return unavailable("source_inactive");
+
+    const apiFootballBridges = identity.linkedBridges.filter((bridge) =>
+      bridge.provider === "api_football"
+      && bridge.namespace === "player"
+      && isCurrentUpstreamBridge(bridge),
+    );
+    const apiFootballIds = [...new Set(apiFootballBridges.map((bridge) => bridge.externalId))];
+    if (apiFootballIds.length === 0) return unavailable("target_not_found");
+    if (apiFootballIds.length !== 1) return unavailable("target_ambiguous");
+
+    const apiFootballPlayerId = apiFootballIds[0]!;
+    const owners = this.targetOwnerLookup.all(apiFootballPlayerId) as Array<{
+      canonicalReepId: string | null;
+      upstreamStatus: string | null;
+    }>;
+    const currentOwners = [...new Set(owners
+      .filter((owner) => isCurrentUpstreamBridge({ upstreamStatus: owner.upstreamStatus }))
+      .flatMap((owner) => owner.canonicalReepId ? [owner.canonicalReepId] : []))];
+    if (currentOwners.length !== 1 || currentOwners[0] !== identity.reepId) {
+      return unavailable("target_ambiguous");
+    }
+
+    return {
+      status: "resolved",
+      releaseStamp: this.releaseStamp,
+      source,
+      reepId: identity.reepId,
+      apiFootballPlayerId,
+      sourceRungs: [...new Set(activeSourceBridges.flatMap((bridge) => bridge.rung ? [bridge.rung] : []))].sort(),
+      apiFootballRungs: [...new Set(apiFootballBridges
+        .filter((bridge) => bridge.externalId === apiFootballPlayerId)
+        .flatMap((bridge) => bridge.rung ? [bridge.rung] : []))].sort(),
+    };
+  }
+
   close(): void {
     if (this.closed) return;
     this.database.close();
     this.closed = true;
   }
+}
+
+function isCurrentUpstreamBridge(bridge: { upstreamStatus: string | null }): boolean {
+  const status = bridge.upstreamStatus?.trim().toLowerCase();
+  return status === undefined || status === "" || status === "active";
 }

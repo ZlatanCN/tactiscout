@@ -26,7 +26,7 @@ Labels: wayfinder:map
 - [新增球员与表现数据源调查](research/additional-player-data-options-2026-10.md)进一步核查 TheSportsDB、Afriskaut、Wikidata、Impect 与 Fantasy Premier League。当前结论：TheSportsDB 可 GO 做有限的只读 roster enrichment 验证，但公开部署应走 $9/月应用计划、能力评分暂 NO-GO、模型处理/缓存保留范围待书面确认；Afriskaut 可作为带署名的本地 2024 青少年事件 benchmark，不能当职业转会池，具名未成年资料的公开/模型处理先确认隐私和参与者授权；FPL 自动抽取 NO-GO。
 - [Wyscout 真实数据 smoke test](research/wyscout-real-data-smoke-2026-10.md)记录对官方 Figshare 文件的本机联调结果：默认五大联赛共 2,682 条历史球员赛季记录，真实文件中的嵌套阵容与哨兵字段已由 adapter 覆盖；源文件哈希和出处保存在 Git 忽略目录。
 - [StatsBomb 射门质量证据调查](research/statsbomb-shot-quality-evidence-2026-10.md)核对官方 schema、事件样例和数据使用协议；建议只在本机派生并展示非点球 xG，缺字段不补零，公开分析前核实协议并附官方 logo。
-- [issue 32：面向按需调查的数据源查询契约](issues/32-query-scoped-player-source-contract.md)：对话 Agent 通过球队检查、候选分页、按 ID 评估和同组比较查询访问来源；在线 adapter 可不实现全库 `loadPlayers()`。PlayerElo 另有默认关闭的 LangGraph report-only 节点，只在证据审查后查询最终推荐，唯一姓名匹配才作为独立信号显示，不进入 LLM、战术评分或推荐顺序；因 SQLite checkpoint 和浏览器 localStorage 会保留报告快照，真实 key、展示权和本地保留权 opt-in 及 API smoke 待完成。
+- [issue 32：面向按需调查的数据源查询契约](issues/32-query-scoped-player-source-contract.md)：对话 Agent 通过球队检查、候选分页、按 ID 评估和同组比较查询访问来源；在线 adapter 可不实现全库 `loadPlayers()`。PlayerElo 另有默认关闭的 LangGraph report-only 节点，只在证据审查后查询最终推荐；来源 ID 精确匹配或 Reep 固定 release 的唯一跨来源桥接后才按 ID 请求记录，不进入 LLM、战术评分或推荐顺序。因 SQLite checkpoint 和浏览器 localStorage 会保留报告快照，真实 key、展示权和本地保留权 opt-in 及 API smoke 待完成。
 - [Reep 数据源下一步调查](research/football-data-provider-next-step-2026-10.md)：Reep 最适合作为本地 CC0 provider-ID crosswalk，不是新统计源；先实现精确身份映射与 redirect 处理，再推进跨来源表现证据，不能按姓名合并。
 - [Reep → Wyscout 历史档案桥接范围](research/reep-wyscout-bridge-coverage-2026-10.md)：官方 `20261003T052950Z` release 已校验并导入；单条 Sportmonks → Reep → Wyscout → 本地 2017/18 意甲样本 smoke 通过。Sportmonks 是 bridge-only，coverage 按 provider/competition 部分覆盖；该单条 smoke 不代表真实候选池覆盖率。
 - [issue 33：Reep 跨来源身份注册表](issues/33-reep-cross-source-identity-registry.md)：已导入并索引官方 release；支持 merged redirects 与 `target_not_published` tombstone，按精确 provider ID 查询。原始 bridge/redirect 文件和 SQLite 索引只留在 Git 忽略目录。
@@ -57,6 +57,8 @@ Labels: wayfinder:map
 - 使用 `.scratch/<feature>/` 保存地图、规格和单独的问题文件；本地 triage 标签沿用项目默认值。
 
 ## Decisions-so-far
+- [验证 PlayerElo 的精确身份桥接](issues/42-playerelo-exact-identity-crosswalk.md)：固定 Reep release 在当前 Wyscout 2017/18 快照的 2,561 个球员 ID 中，为 2,375 个提供唯一 API-Football ID 桥接；它只证明身份 join 覆盖，不能证明 PlayerElo API 命中或数据使用许可。下一实现仍须保留 feature gates。
+- [通过 Reep 精确桥接查询 PlayerElo](issues/43-playerelo-reep-id-enrichment.md)：Reep importer 现在包含 `api_football/player`；候选来源 ID 经唯一且有效的 canonical bridge 解析后，调用 PlayerElo `getPlayer(id)`，并记录 Reep release、canonical ID 与两侧 rung。未知/已撤回上游状态、缺失或歧义映射均跳过；不按姓名回退。真实 PlayerElo key、展示/本地保留授权和在线命中覆盖仍未验证，feature gates 保持关闭。
 - 最新方向（2026-10-04）：`curated` 候选查询使用 TactiScout 版本化快照；当前快照来自 Wyscout 2017/18。`pnpm dataset:refresh` 可从固定 Figshare 版本重新获取、校验和重建。第一方观察是有授权的定性补充层；其他 provider 只有在覆盖/指标增益明确时再接入。详见 [issue 40](issues/40-tactiscout-owned-scouting-dataset.md) 和[调查](research/self-built-scouting-dataset-feasibility-2026-10.md)。
 - [issue 37](issues/37-terminal-source-access-failure.md)：FBref 任一页面的 403/429 触发 LangGraph 确定性结束和明确错误报告，不会被转换成“无候选”或模型的后续追问；抓取器先请求标准页，其余页面串行且至少间隔 1 秒。
 - [issue 38](issues/38-stable-local-preview-port.md)：开发网页固定绑定 127.0.0.1:5173，端口冲突时显式失败，避免悄悄打开包含旧前端契约的替代预览。
@@ -115,6 +117,7 @@ Labels: wayfinder:map
 - 当前来源发现只覆盖 PLOS 学术文章；通用网页搜索 provider、最终 embedding 模型和 RAG/Agent 评测阈值仍待验证。
 - FBref provider 已接入，但服务端联通确认收到标准 Big 5 页 HTTP 403，未重试或绕过访问检查；issue 36 保持 claimed，需在可访问环境中再确认 live 数据链路。FBref 对 AI prompting 的使用边界也未因非商业用途而消失。Wyscout 2017/18 公开数据只用于历史表现验证，不能填补现役候选池。
 - PlayerElo 官方列出免费 hobby 档每月 500 次调用，但所有接口要求 Bearer key；2026-10-04 官网 key/subscription 入口显示暂不可用。现有 report-only 节点仍默认关闭，等待免费 key 入口可用以及展示/本地保留范围确认；不会把它假设成无需凭据的 FBref 替代品。
+- Reep 本地 crosswalk 只证明来源 ID 与 API-Football ID 的可映射比例，不证明 PlayerElo endpoint 命中。当前 importer/resolver 已支持这个两跳桥接；需在重新导入含 API-Football namespace 的 release 后用固定快照做 CLI 验证，真实 PlayerElo 请求仍需 key 和许可确认。
 - Reep resolver 已导入 `20261003T052950Z` release，并对一个 Sportmonks ID 完成 Wyscout 本地档案 smoke。StatsBomb/SkillCorner 和真实候选池的 provider bridge 覆盖率、live Sportmonks API 联调及 snapshot 更新流程仍待验证。
 
 ## Out of scope

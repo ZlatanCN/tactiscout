@@ -18,6 +18,9 @@ function usage(): string {
     "Resolve one of TactiScout's source provider names:",
     "  pnpm identity:reep resolve-source <source-provider> <external-id> [index.sqlite]",
     "",
+    "Resolve a source ID to the exact PlayerElo/API-Football ID:",
+    "  pnpm identity:reep resolve-playerelo <source-provider> <external-id> [index.sqlite]",
+    "",
     `Default index: ${defaultDatabasePath}`,
   ].join("\n");
 }
@@ -38,7 +41,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (command === "resolve" || command === "resolve-source") {
+  if (command === "resolve" || command === "resolve-source" || command === "resolve-playerelo") {
     const [first, second, third, fourth] = args;
     if (!first || !second || (command === "resolve" && !third)) throw new Error(usage());
     const databasePath = command === "resolve" ? fourth ?? defaultDatabasePath : third ?? defaultDatabasePath;
@@ -46,12 +49,11 @@ async function main(): Promise<void> {
     try {
       const result = command === "resolve"
         ? registry.resolveExact(first, second, third!)
-        : registry.resolveSourceProvider(first, second);
+        : command === "resolve-playerelo"
+          ? registry.resolvePlayerEloId(first, second)
+          : registry.resolveSourceProvider(first, second);
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      if (result.status === "not_found" || result.status === "unsupported_provider" || result.status === "ambiguous"
-        || result.status === "de_corroborated" || result.status === "withheld" || result.status === "target_not_published") {
-        process.exitCode = 2;
-      }
+      if (result.status !== "resolved") process.exitCode = 2;
     } finally {
       registry.close();
     }

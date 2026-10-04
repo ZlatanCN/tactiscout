@@ -12,7 +12,7 @@ import {
   type ConversationMessage,
   type SavedRecruitmentPlan,
 } from "./plans";
-import type { DatasetStatus, RecruitmentProgress, RecruitmentProgressStage, RecruitmentReport } from "../../src/domain/schemas.js";
+import type { DatasetStatus, PlayerEloSignal, RecruitmentProgress, RecruitmentProgressStage, RecruitmentReport } from "../../src/domain/schemas.js";
 import { describeDatasetScope } from "../../src/domain/dataset-scope.js";
 import { firstPartyObservationSourceId } from "../../src/knowledge/source-ids.js";
 
@@ -588,7 +588,7 @@ function RecommendationCard({ recommendation, rank, selected, selectionDisabled,
         <strong className="evidence-label">独立表现参考 · PlayerElo</strong>
         <p><b>Elo {formatMetric(signal.elo)}</b>{signal.earLabel ? ` · ${signal.earLabel}` : ""}</p>
         <small>{[signal.currentTeam ? `来源当前球队：${signal.currentTeam}` : null, signal.currentLeague ? `联赛：${signal.currentLeague}` : null, signal.position ? `位置：${signal.position}` : null].filter(Boolean).join(" · ") || "来源未提供球队或位置"}</small>
-        <small>身份由 {signal.identitySourceProvider} 球员 ID {signal.identitySourcePlayerId} 与 PlayerElo ID 精确关联。更新于 {formatDate(signal.retrievedAt)}。</small>
+        <small>{playerEloIdentityText(signal)} 更新于 {formatDate(signal.retrievedAt)}。</small>
         <a href="https://playerelo.football/" target="_blank" rel="noreferrer">PlayerElo · 模型说明与来源</a>
       </section>)}
       {recommendation.historicalArchiveSamples.length > 0 && <section className="historical-archive-samples">
@@ -635,10 +635,25 @@ function externalSignalCoverageText(coverage: RecruitmentReport["externalSignalC
         : "尚未开启本机案件与报告快照保留许可，当前未查询。";
   }
   if (coverage.status === "not_run") return "本轮未查询；配置并获准展示后，只会在证据审查通过后核对最终推荐对象。";
-  const summary = `具备精确身份 ID ${coverage.checkedCandidates} 人，已匹配 ${coverage.matchedCandidates} 人；另有 ${coverage.identityUnavailableCandidates} 人无法安全关联`;
+  const identityMethods = coverage.directIdentityCandidates + coverage.crosswalkIdentityCandidates > 0
+    ? `（来源 ID 直连 ${coverage.directIdentityCandidates} 人，Reep 桥接 ${coverage.crosswalkIdentityCandidates} 人）`
+    : "";
+  const summary = `${coverage.checkedCandidates} 人可安全精确关联${identityMethods}，已匹配 ${coverage.matchedCandidates} 人；另有 ${coverage.identityUnavailableCandidates} 人无法安全关联`;
   if (coverage.status === "complete") return `${summary}；查询完整。未匹配项不会按零分处理。`;
   if (coverage.status === "partial") return `${summary}；${coverage.failedCandidates} 人查询失败。未匹配项不会按零分处理。`;
   return `${summary}；外部查询失败，未匹配项不会按零分处理。`;
+}
+
+function playerEloIdentityText(signal: PlayerEloSignal): string {
+  const crosswalk = signal.identityCrosswalk;
+  if (signal.identityMatch === "reep_crosswalk" && crosswalk) {
+    const rungDetails = [
+      crosswalk.sourceRungs.length ? `来源 rung：${crosswalk.sourceRungs.join("、")}` : null,
+      crosswalk.apiFootballRungs.length ? `API-Football rung：${crosswalk.apiFootballRungs.join("、")}` : null,
+    ].filter(Boolean).join("；");
+    return `经 Reep ${crosswalk.releaseStamp} 桥接：${signal.identitySourceProvider} ID ${signal.identitySourcePlayerId} → ${crosswalk.canonicalId} → API-Football / PlayerElo ID ${signal.providerPlayerId}${rungDetails ? `（${rungDetails}）` : ""}。`;
+  }
+  return `来源 ${signal.identitySourceProvider} ID ${signal.identitySourcePlayerId} 与 PlayerElo ID ${signal.providerPlayerId} 完全一致。`;
 }
 
 function historicalArchiveCoverageText(coverage: RecruitmentReport["historicalArchiveCoverage"]): string {
